@@ -1,0 +1,28 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools", "wheel"]
+
+[project]
+authors = [{name = "dreadew", email = "p74ur@yandex.ru"}]
+dependencies = [
+  "langchain>=0.3.27",
+  "langchain-gigachat>=0.3.12",
+  "langchain-community>=0.3.29",
+  "faiss-cpu>=1.12.0",
+  "langgraph>=0.6.6",
+  "fastapi>=0.116.1",
+  "uvicorn>=0.35.0",
+  "python-dotenv>=1.1.1",
+  "langsmith>=0.4.21",
+  "pydantic>=2.11.7",
+  "sentence-transformers>=5.1.0",
+]
+description = "ИИ-агент для ревью SQL-запросов PostgreSQL с использованием LangGraph и GigaChat"
+license = "MIT"
+name = "postgresql-reviewer"
+readme = "README.md"
+requires-python = ">=3.11"
+version = "1.0.0"
+
+[tool.setuptools.packages.find]
+where = ["src"]
