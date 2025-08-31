@@ -1,10 +1,12 @@
 import uuid
 from fastapi import APIRouter, HTTPException, Depends
+
 from src.api.schemas import (
     ReviewRequest,
     BatchReviewRequest,
     BatchReviewResponse,
 )
+from src.core.constants import SCORE_THRESHOLD_PASS
 from src.services.review_service import ReviewService
 from src.api.dependencies import get_review_service
 
@@ -64,7 +66,7 @@ async def review_batch(
             total_score += result.get("overall_score", 0)
 
         overall_score = total_score / len(results) if results else 0
-        passed = overall_score >= 70
+        passed = overall_score >= SCORE_THRESHOLD_PASS
 
         return BatchReviewResponse(
             results=results, overall_score=overall_score, passed=passed

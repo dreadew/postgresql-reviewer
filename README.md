@@ -45,22 +45,59 @@ src/
 
 3. Настройте переменные окружения в `.env`:
 
+   ```bash
+   # GigaChat Configuration
+   GIGACHAT_API_KEY=<gigachat-api-key>
+   GIGACHAT_MODEL_NAME=GigaChat
+
+   # LangSmith Configuration (опционально)
+   LANGSMITH_TRACING=true
+   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+   LANGSMITH_API_KEY=<langsmith-api-key>
+   LANGSMITH_PROJECT=postgresql-reviewer
+
+   # Database Configuration
+   DATABASE_URL=postgresql://analyzer:analyzer_password@localhost:5432/analyzer_db
+
+   # Vault Configuration
+   VAULT_ADDR=http://localhost:8200
+   VAULT_TOKEN=<vault-token>
+
+   # Redis Configuration
+   REDIS_URL=redis://localhost:6379
+
+   # Vector Store Configuration
+   VECTOR_STORE=faiss
+   FAISS_PERSIST_DIR=./data/faiss
+   KB_RULES_DIR=./src/kb/rules
+   EMBEDDINGS_MODEL=all-MiniLM-L6-v2
+   TOKENIZERS_PARALLELISM=false
+   CHUNK_SIZE=1500
+   CHUNK_OVERLAP=200
+   MAX_RULES_TO_RETRIEVE=6
+
+   # Application Settings
+   DEBUG=false
+   LOG_LEVEL=INFO
+   LOG_FILE=./logs/postgresql-reviewer.log
+
+   # Rate Limiting
+   RATE_LIMIT_REQUESTS=100
+   RATE_LIMIT_WINDOW=60
+
+   # File Paths
+   STATIC_DIR=./src/api/static
+   LOGS_DIR=./logs
    ```
-    GIGACHAT_API_KEY=<gigachat-api-key>
 
-    LANGSMITH_TRACING=true
-    LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-    LANGSMITH_API_KEY=<langsmith-api-key>
-    LANGSMITH_PROJECT=<langsmith-project>
+4. Создайте необходимые директории:
 
-    VECTOR_STORE=faiss
-    FAISS_PERSIST_DIR=./data/faiss
-    KB_RULES_DIR=./src/kb/rules
-    MAX_RULES_TO_RETRIEVE=6
-    TOKENIZERS_PARALLELISM=false
+   ```bash
+   mkdir -p logs data/faiss
    ```
 
-4. Загрузите правила:
+5. Загрузите правила:
+
    ```bash
    python -c "from src.kb.ingest import ingest_rules; ingest_rules('./src/kb/rules')"
    ```
@@ -136,43 +173,71 @@ batch_response = requests.post("http://localhost:8000/review/batch", json={
 print(batch_response.json())
 ```
 
-## CI/CD Интеграция
+## Тестирование
 
-Для интеграции в CI/CD пайплайн используйте скрипт `ci_cd_review.sh`:
-
-```bash
-./examples/ci_cd_review.sh
-```
-
-Скрипт:
-
-- Собирает SQL-файлы из коммита
-- Отправляет их на ревью через `/review/batch`
-- Проверяет общий скор (порог: 70)
-- Выходит с кодом 1 при неудаче
-
-Пример использования в GitHub Actions:
-
-```yaml
-- name: SQL Review
-  run: ./ci_cd_review.sh
-  env:
-    API_URL: ${{ secrets.API_URL }}
-```
-
-## Docker
-
-Соберите и запустите с Docker Compose:
+Запустите тесты:
 
 ```bash
-docker-compose up --build
+pytest tests/
 ```
 
-Или запустите напрямую:
+Или с покрытием:
 
 ```bash
-docker build -t postgresql-reviewer .
-docker run -p 8000:8000 --env-file .env postgresql-reviewer
+pytest tests/ --cov=src --cov-report=html
+```
+
+### Структура тестов
+
+```
+tests/
+├── conftest.py          # Общие фикстуры
+├── test_api.py          # Тесты API эндпоинтов
+└── test_schemas.py      # Тесты Pydantic схем
+```
+
+## Безопасность
+
+Проект использует следующие меры безопасности:
+
+- **Rate Limiting**: Ограничение количества запросов (настраивается через `RATE_LIMIT_REQUESTS` и `RATE_LIMIT_WINDOW`)
+- **Валидация входных данных**: Все входные данные валидируются с помощью Pydantic
+- **Валидация Cron выражений**: Проверка корректности cron выражений в задачах
+- **Логирование**: Все действия логируются в файл с ротацией
+- **Хранение секретов**: Чувствительные данные хранятся в HashiCorp Vault
+
+## 🚀 Быстрый запуск
+
+```bash
+# 1. Клонировать репозиторий
+git clone <repository-url>
+cd postgresql-reviewer
+
+# 2. Запустить setup
+./setup.sh
+
+# 3. Отредактировать .env файл с реальными ключами API
+
+# 4. Запустить приложение
+uvicorn src.api.main:app --reload
+```
+
+## 📊 Production развертывание
+
+### Docker Compose (рекомендуется)
+
+```bash
+docker-compose up --build -d
+```
+
+### Ручное развертывание
+
+```bash
+# Установка зависимостей
+pip install -e .
+
+# Запуск с Gunicorn (production)
+gunicorn src.api.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
 ## Конфигурация

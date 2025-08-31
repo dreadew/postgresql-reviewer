@@ -1,6 +1,5 @@
-from typing import List, Dict, Any
+from typing import Dict, Any
 from src.core.agents.gigachat_agent import GigaChatAgent
-from src.store.factory import VectorStoreFactory
 
 
 class ReviewService:
