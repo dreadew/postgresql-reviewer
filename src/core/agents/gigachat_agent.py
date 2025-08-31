@@ -12,7 +12,7 @@ from src.core.config import settings
 class GigaChatAgent(BaseAgent):
     """Агент для анализа SQL и конфигурации."""
 
-    def __init__(self, api_key: str, model_name: str = settings.model_name):
+    def __init__(self, api_key: str, model_name: str = settings.gigachat_model_name):
         super().__init__(api_key, model_name)
 
         self.llm_service = LLMService(self.model)
@@ -50,10 +50,14 @@ class GigaChatAgent(BaseAgent):
         return self.sql_workflow.execute(initial_state, thread_id)
 
     def analyze_config(
-        self, config: Dict[str, Any], environment: str = "test"
+        self,
+        config: Dict[str, Any],
+        server_info: Dict[str, str],
+        environment: str = "test",
     ) -> Dict[str, Any]:
         initial_state = {
             "config": config,
+            "server_info": server_info,
             "retrieved_rules": [],
             "prompt": "",
             "response": "",

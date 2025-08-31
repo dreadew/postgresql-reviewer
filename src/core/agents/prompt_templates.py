@@ -30,6 +30,7 @@ CONFIG_ANALYZE_TEMPLATE = """
 {retrieved_rules}
 ВХОДНЫЕ ДАННЫЕ:
 CONFIG: {config}
+SERVER_RESOURCES: {server_info}
 ENVIRONMENT: {environment}
 ЗАДАЧА:
 1) Проанализируй конфигурацию PostgreSQL.

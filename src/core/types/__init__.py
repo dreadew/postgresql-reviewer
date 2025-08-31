@@ -24,6 +24,7 @@ class ConfigAgentState(TypedDict):
     """Состояния для анализа конфигурации."""
 
     config: Dict[str, Any]
+    server_info: Dict[str, str]
     retrieved_rules: List[Dict[str, Any]]
     prompt: str
     response: str

@@ -175,6 +175,7 @@ class ConfigAnalysisWorkflow:
     def _compose_config_prompt_node(self, state: ConfigAgentState) -> ConfigAgentState:
         prompt = self._compose_config_prompt(
             state["config"],
+            state["server_info"],
             state["retrieved_rules"],
             state["environment"],
         )
@@ -206,6 +207,7 @@ class ConfigAnalysisWorkflow:
     def _compose_config_prompt(
         self,
         config: Dict[str, Any],
+        server_info: Dict[str, str],
         retrieved_rules: List[Dict[str, Any]],
         environment: str,
     ) -> str:
@@ -216,6 +218,7 @@ class ConfigAnalysisWorkflow:
         return CONFIG_ANALYZE_TEMPLATE.format(
             retrieved_rules=rules_text,
             config=json.dumps(config, indent=2),
+            server_info=json.dumps(server_info, indent=2),
             environment=environment,
         )
 
