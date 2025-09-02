@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
-RULES_DIR = Path(__file__).parent.parent.parent / "src" / "kb" / "rules"
+from src.core.config import settings
+
+RULES_DIR = Path(settings.kb_rules_dir)
 
 
 class RuleInfo(BaseModel):
@@ -47,25 +49,40 @@ async def ingest_rules_endpoint(request: IngestRequest):
 async def get_rules(category: Optional[str] = None):
     """Получить список всех правил."""
     try:
+        print(f"DEBUG: Getting rules with category: {category}")
+        print(f"DEBUG: RULES_DIR: {RULES_DIR}")
+        print(f"DEBUG: RULES_DIR exists: {RULES_DIR.exists()}")
+
         rules = []
 
         search_dirs = []
         if category:
+            logger.info(f"Category specified: {category}")
             if category in ["config", "sql"]:
                 search_dirs.append(RULES_DIR / category)
+                logger.info(f"Added search dir: {RULES_DIR / category}")
             else:
+                logger.error(f"Invalid category: {category}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Category must be 'config' or 'sql'",
                 )
         else:
+            logger.info("No category specified, searching all")
             search_dirs = [RULES_DIR / "config", RULES_DIR / "sql"]
+            logger.info(f"Search dirs: {search_dirs}")
 
         for search_dir in search_dirs:
+            logger.info(f"Checking search dir: {search_dir}")
+            logger.info(f"Search dir exists: {search_dir.exists()}")
             if not search_dir.exists():
+                logger.warning(f"Search dir does not exist: {search_dir}")
                 continue
 
-            for file_path in search_dir.glob("*.md"):
+            md_files = list(search_dir.glob("*.md"))
+            logger.info(f"Found {len(md_files)} .md files in {search_dir}")
+            for file_path in md_files:  # Process all files, not just first 2
+                logger.info(f"Processing file: {file_path}")
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()

@@ -133,7 +133,7 @@ class DatabaseService:
         set_parts = []
         params = []
         for key, value in update_data.items():
-            if key != "id":  # Не обновляем ID
+            if key != "id":
                 set_parts.append(f"{key} = %s")
                 params.append(value)
 
@@ -198,7 +198,7 @@ class DatabaseService:
         set_parts = []
         params = []
         for key, value in update_data.items():
-            if key != "id":  # Не обновляем ID
+            if key != "id":
                 set_parts.append(f"{key} = %s")
                 params.append(value)
 
