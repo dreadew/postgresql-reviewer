@@ -20,7 +20,8 @@ def _read_rule_file(path: str) -> str:
         return f.read()
 
 
-def ingest_rules(rules_dir: str):
+def ingest_rules(rules_dir: str, rule_type: str = "sql"):
+    """Загружает правила определенного типа в соответствующий FAISS индекс."""
     rules_dir = os.path.abspath(rules_dir)
     files = sorted(glob.glob(os.path.join(rules_dir, "**", "*.md"), recursive=True))
     if not files:
@@ -38,14 +39,15 @@ def ingest_rules(rules_dir: str):
         title = Path(p).stem
         chunks = splitter.split_text(text)
         for ch in chunks:
-            md = {"title": title, "source": p}
+            md = {"title": title, "source": p, "type": rule_type}
             docs.append({"page_content": ch, "metadata": md})
 
     lc_docs = [
         Document(page_content=d["page_content"], metadata=d["metadata"]) for d in docs
     ]
     store = FAISS.from_documents(lc_docs, embeddings)
-    persist_dir = settings.faiss_persist_dir
+
+    persist_dir = os.path.join(settings.faiss_persist_dir, rule_type)
     os.makedirs(persist_dir, exist_ok=True)
     store.save_local(persist_dir)
-    logger.info(f"FAISS индекс успешно сохранен в {persist_dir}")
+    logger.info(f"FAISS индекс для {rule_type} успешно сохранен в {persist_dir}")

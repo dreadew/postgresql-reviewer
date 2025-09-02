@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 class SchedulerService:
     def __init__(self, redis_url: str = None):
-        # Используем настройки из config вместо жестко заданного URL
         redis_url = redis_url or settings.redis_url or "redis://localhost:6379"
         self.redis_client = redis.from_url(redis_url)
         self.running = False
@@ -22,26 +21,21 @@ class SchedulerService:
         self.running = True
         logger.info("Планировщик задач запущен")
 
-        # Настраиваем обработчики сигналов в асинхронном контексте
         def signal_handler(signum, frame):
             logger.info(f"Получен сигнал {signum}, останавливаю планировщик...")
-            # Сохраняем задачу в переменную для предотвращения garbage collection
             stop_task = asyncio.create_task(self.stop_scheduler_async())
 
-        # Используем asyncio для неблокирующей обработки сигналов
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, signal_handler)
 
         while self.running:
             try:
-                # Используем asyncio.to_thread для неблокирующих Redis операций
                 task_data = await asyncio.to_thread(
                     self.redis_client.blpop, "task_queue", timeout=10
                 )
                 if task_data:
                     task_info = json.loads(task_data[1])
-                    # Используем asyncio.to_thread для неблокирующей обработки задач
                     await asyncio.to_thread(self.process_task, task_info)
                 else:
                     await asyncio.sleep(1)
@@ -80,8 +74,7 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Ошибка в process_task: {e}")
-            # Можно добавить логику повторных попыток или уведомлений
-            raise  # Передаем исключение выше для обработки
+            raise
 
     def process_config_check(self, task_info: Dict[str, Any]):
         """Обработать задачу проверки конфигурации."""

@@ -7,12 +7,13 @@ import logging
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from src.core.types import AgentState, ConfigAgentState
+from src.core.types import AgentState, ConfigAgentState, LogsAgentState
 from src.core.utils.json_helper import safe_extract_json
 from src.core.agents.prompt_templates import (
     BASE_PROMPT_TEMPLATE,
     SYSTEM_REVIEWER_PROMPT,
     CONFIG_ANALYZE_TEMPLATE,
+    LOGS_ANALYZE_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,8 +95,15 @@ class SQLReviewWorkflow:
         self, sql: str, top_k: int = settings.max_rules_to_retrieve
     ) -> List[Dict[str, Any]]:
         if not self.store:
+            logger.warning("Vector store is not initialized")
             return []
-        return self.store.similarity_search(sql, k=top_k)
+        try:
+            results = self.store.similarity_search(sql, k=top_k)
+            logger.info(f"Retrieved {len(results)} rules for SQL query")
+            return results
+        except Exception as e:
+            logger.error(f"Error retrieving rules: {e}")
+            return []
 
     def _compose_sql_prompt(
         self,
@@ -218,6 +226,92 @@ class ConfigAnalysisWorkflow:
         return CONFIG_ANALYZE_TEMPLATE.format(
             retrieved_rules=rules_text,
             config=json.dumps(config, indent=2),
+            server_info=json.dumps(server_info, indent=2),
+            environment=environment,
+        )
+
+    def execute(
+        self, initial_state: Dict[str, Any], thread_id: str = None
+    ) -> Dict[str, Any]:
+        config = {"configurable": {"thread_id": thread_id or "config_analysis"}}
+        final_state = self.graph.invoke(initial_state, config=config)
+        return final_state["result"]
+
+
+class LogsAnalysisWorkflow:
+    """Workflow для анализа конфигурации."""
+
+    def __init__(self, llm_service, store):
+        self.llm_service = llm_service
+        self.store = store
+        self.graph = self._build_graph()
+
+    def _build_graph(self):
+        graph = StateGraph(LogsAgentState)
+        graph.add_node("retrieve_logs_rules", self._retrieve_logs_rules_node)
+        graph.add_node("compose_logs_prompt", self._compose_logs_prompt_node)
+        graph.add_node("call_logs_llm", self._call_logs_llm_node)
+        graph.add_node("parse_logs_response", self._parse_logs_response_node)
+
+        graph.add_edge(START, "retrieve_logs_rules")
+        graph.add_edge("retrieve_logs_rules", "compose_logs_prompt")
+        graph.add_edge("compose_logs_prompt", "call_logs_llm")
+        graph.add_edge("call_logs_llm", "parse_logs_response")
+        graph.add_edge("parse_logs_response", END)
+
+        return graph.compile(checkpointer=MemorySaver())
+
+    def _retrieve_logs_rules_node(self, state: LogsAgentState) -> ConfigAgentState:
+        retrieved_rules = self._retrieve_config_rules(state["logs"])
+        state["retrieved_rules"] = retrieved_rules
+        return state
+
+    def _compose_logs_prompt_node(self, state: LogsAgentState) -> ConfigAgentState:
+        prompt = self._compose_config_prompt(
+            state["logs"],
+            state["server_info"],
+            state["retrieved_rules"],
+            state["environment"],
+        )
+        state["prompt"] = prompt
+        return state
+
+    def _call_logs_llm_node(self, state: ConfigAgentState) -> LogsAgentState:
+        messages = [
+            SystemMessage(content="Ты — эксперт по логам PostgreSQL."),
+            HumanMessage(content=state["prompt"]),
+        ]
+        response = self.llm_service.invoke_with_messages(messages)
+        state["response"] = response
+        return state
+
+    def _parse_logs_response_node(self, state: LogsAgentState) -> ConfigAgentState:
+        json_response = safe_extract_json(state["response"])
+        state["result"] = json.loads(json_response)
+        return state
+
+    def _retrieve_logs_rules(
+        self, config: Dict[str, Any], top_k: int = settings.max_rules_to_retrieve
+    ) -> List[Dict[str, Any]]:
+        if not self.store:
+            return []
+        search_query = " ".join(config.keys())
+        return self.store.similarity_search(search_query, k=top_k)
+
+    def _compose_logs_prompt(
+        self,
+        logs: str,
+        server_info: Dict[str, str],
+        retrieved_rules: List[Dict[str, Any]],
+        environment: str,
+    ) -> str:
+        rules_text = ""
+        for r in retrieved_rules:
+            rules_text += f"- {r.get('title', '')}: {r.get('text', '')[:800]}\n"
+
+        return LOGS_ANALYZE_TEMPLATE.format(
+            retrieved_rules=rules_text,
+            logs=logs,
             server_info=json.dumps(server_info, indent=2),
             environment=environment,
         )

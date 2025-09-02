@@ -120,8 +120,6 @@ class PostgresService:
         """Получить записи из логов PostgreSQL."""
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                # Для получения логов требуется настройка logging_collector
-                # и доступ к файлам логов или использование pg_log
                 try:
                     cur.execute(
                         """

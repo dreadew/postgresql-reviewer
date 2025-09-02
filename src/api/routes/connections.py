@@ -108,14 +108,13 @@ async def update_connection(connection_id: int, connection_data: ConnectionUpdat
 
         update_data = connection_data.dict(exclude_unset=True)
 
-        # Обновить учетные данные в Vault если указан новый пароль или имя пользователя
         if (hasattr(connection_data, "password") and connection_data.password) or (
             hasattr(connection_data, "username") and connection_data.username
         ):
             new_username = connection_data.username or existing_connection["username"]
             new_password = connection_data.password or None
 
-            if new_password:  # Обновляем пароль только если он указан
+            if new_password:
                 credentials = {
                     "username": new_username,
                     "password": new_password,

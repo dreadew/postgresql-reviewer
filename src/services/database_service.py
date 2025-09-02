@@ -229,3 +229,6 @@ class DatabaseService:
             return True
         except Exception:
             return False
+
+
+database_service = DatabaseService()

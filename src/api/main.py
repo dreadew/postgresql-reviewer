@@ -8,12 +8,15 @@ from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
 
+from src.api.app import app
 from src.core.config import settings
 from src.kb.ingest import ingest_rules
 
 from src.core.constants import LOG_MAX_BYTES, LOG_BACKUP_COUNT
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 logging.basicConfig(
@@ -33,6 +36,15 @@ file_handler.setLevel(log_level)
 root_logger = logging.getLogger()
 root_logger.addHandler(file_handler)
 
-if not os.path.exists(os.path.join(settings.faiss_persist_dir, "index.faiss")):
-    rules_dir = settings.kb_rules_dir
-    ingest_rules(rules_dir)
+# Автоматическая загрузка правил для всех типов
+rules_base_dir = settings.kb_rules_dir
+if os.path.exists(rules_base_dir):
+    for item in os.listdir(rules_base_dir):
+        rule_dir = os.path.join(rules_base_dir, item)
+        if os.path.isdir(rule_dir):
+            index_path = os.path.join(settings.faiss_persist_dir, item, "index.faiss")
+            if not os.path.exists(index_path):
+                logger.info(f"Загрузка правил типа '{item}' из {rule_dir}")
+                ingest_rules(rule_dir, item)
+else:
+    logger.warning(f"Базовая директория правил {rules_base_dir} не найдена")
