@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 from langchain_gigachat import GigaChat
 from langsmith import Client
+from langfuse import get_client
 
 
 class BaseAgent(ABC):
@@ -24,6 +25,7 @@ class BaseAgent(ABC):
             timeout=60,
         )
         self.langsmith_client = Client()
+        self.langfuse_client = get_client()
 
     @abstractmethod
     def review(

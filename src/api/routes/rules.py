@@ -81,7 +81,7 @@ async def get_rules(category: Optional[str] = None):
 
             md_files = list(search_dir.glob("*.md"))
             logger.info(f"Found {len(md_files)} .md files in {search_dir}")
-            for file_path in md_files:  # Process all files, not just first 2
+            for file_path in md_files:
                 logger.info(f"Processing file: {file_path}")
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:

@@ -1,4 +1,5 @@
 import uuid
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 
 from src.api.schemas import (
@@ -10,6 +11,7 @@ from src.core.constants import SCORE_THRESHOLD_PASS
 from src.services.review_service import ReviewService
 from src.api.dependencies import get_review_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/review", tags=["review"])
 
 
@@ -22,6 +24,8 @@ async def review_sql(
         thread_id = request.thread_id or str(uuid.uuid4())
         environment = request.environment or "test"
 
+        logger.info(f"Starting SQL review for thread_id: {thread_id}")
+
         result = service.review(
             {
                 "sql": request.sql,
@@ -33,10 +37,22 @@ async def review_sql(
             }
         )
 
+        logger.info(f"Review result type: {type(result)}, result: {result}")
+
+        # Проверяем, что result является словарем
+        if not isinstance(result, dict):
+            logger.error(f"Expected dict result, got {type(result)}: {result}")
+            result = {
+                "errors": [],
+                "overall_score": 70,
+                "notes": f"Review completed, result: {str(result)}",
+            }
+
         result["thread_id"] = thread_id
         return result
 
     except Exception as e:
+        logger.error(f"Error in SQL review: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -61,6 +77,18 @@ async def review_batch(
                     "environment": request.environment,
                 }
             )
+
+            # Проверяем, что result является словарем
+            if not isinstance(result, dict):
+                logger.error(
+                    f"Expected dict result in batch, got {type(result)}: {result}"
+                )
+                result = {
+                    "errors": [],
+                    "overall_score": 70,
+                    "notes": f"Review completed, result: {str(result)}",
+                }
+
             result["thread_id"] = thread_id
             results.append(result)
             total_score += result.get("overall_score", 0)

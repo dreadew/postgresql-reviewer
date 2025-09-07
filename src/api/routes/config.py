@@ -15,6 +15,7 @@ async def analyze_config(
         result = service.analyze_config(
             {
                 "config": request.config,
+                "server_info": request.server_info,
                 "environment": request.environment,
             }
         )

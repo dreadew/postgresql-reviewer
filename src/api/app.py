@@ -8,8 +8,10 @@ from slowapi.middleware import SlowAPIMiddleware
 from src.api.routes.review import router as review_router
 from src.api.routes.config import router as config_router
 from src.api.routes.rules import router as rules_router
-from src.api.routes.tasks import router as tasks_router
 from src.api.routes.connections import router as connections_router
+from src.api.routes.monitoring import router as monitoring_router
+from src.api.routes.scheduler import router as scheduler_router
+from src.api.routes.logs import router as logs_router
 from src.core.config import settings
 
 
@@ -44,13 +46,13 @@ def create_application() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-    app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
-
     app.include_router(review_router)
     app.include_router(config_router)
     app.include_router(rules_router)
-    app.include_router(tasks_router)
     app.include_router(connections_router)
+    app.include_router(monitoring_router)
+    app.include_router(scheduler_router)
+    app.include_router(logs_router)
 
     @app.get("/")
     async def root():

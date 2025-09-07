@@ -1,5 +1,8 @@
 from typing import Dict, Any
+import logging
 from src.core.agents.gigachat_agent import GigaChatAgent
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewService:
@@ -9,7 +12,9 @@ class ReviewService:
     def review(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         thread_id = payload.get("thread_id")
         environment = payload.get("environment", "test")
-        return self.agent.review(
+        logger.info(f"Starting review with payload: {payload}")
+
+        result = self.agent.review(
             sql=payload["sql"],
             query_plan=payload["query_plan"],
             tables=payload["tables"],
@@ -18,9 +23,24 @@ class ReviewService:
             environment=environment,
         )
 
+        logger.info(f"Review result type: {type(result)}, result: {result}")
+        return result
+
     def analyze_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         environment = payload.get("environment", "test")
+        server_info = payload.get("server_info", {})
         return self.agent.analyze_config(
             config=payload["config"],
+            server_info=server_info,
+            environment=environment,
+        )
+
+    def analyze_logs(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Анализ логов PostgreSQL."""
+        environment = payload.get("environment", "production")
+        server_info = payload.get("server_info", {})
+        return self.agent.analyze_logs(
+            logs=payload["logs"],
+            server_info=server_info,
             environment=environment,
         )

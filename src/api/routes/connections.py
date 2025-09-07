@@ -28,9 +28,12 @@ def get_connection_or_404(connection_id: int) -> Dict[str, Any]:
 async def create_connection(connection_data: ConnectionCreate):
     """Создать новое подключение к БД."""
     try:
-        vault_path = f"database/creds/connection_{connection_data.name.replace(' ', '_').lower()}"
+        vault_path = f"secret/database/connections/{connection_data.name.replace(' ', '_').lower()}"
 
         credentials = {
+            "host": connection_data.host,
+            "port": connection_data.port,
+            "database": connection_data.database,
             "username": connection_data.username,
             "password": connection_data.password,
         }
@@ -44,11 +47,10 @@ async def create_connection(connection_data: ConnectionCreate):
 
         connection_info = {
             "name": connection_data.name,
-            "host": connection_data.host,
-            "port": connection_data.port,
-            "database": connection_data.database,
-            "username": connection_data.username,
             "vault_path": vault_path,
+            "environment": connection_data.environment,
+            "description": connection_data.description,
+            "tags": connection_data.tags,
             "is_active": connection_data.is_active,
         }
 
@@ -108,19 +110,21 @@ async def update_connection(connection_id: int, connection_data: ConnectionUpdat
 
         update_data = connection_data.dict(exclude_unset=True)
 
-        if (hasattr(connection_data, "password") and connection_data.password) or (
-            hasattr(connection_data, "username") and connection_data.username
-        ):
-            new_username = connection_data.username or existing_connection["username"]
-            new_password = connection_data.password or None
+        vault_fields = {"host", "port", "database", "username", "password"}
+        vault_updates = {k: v for k, v in update_data.items() if k in vault_fields}
+        update_data = {k: v for k, v in update_data.items() if k not in vault_fields}
 
-            if new_password:
-                credentials = {
-                    "username": new_username,
-                    "password": new_password,
-                }
+        if vault_updates:
+            current_credentials = vault_service.get_credentials(
+                existing_connection["vault_path"]
+            )
+
+            if current_credentials:
+                updated_credentials = current_credentials.copy()
+                updated_credentials.update(vault_updates)
+
                 vault_service.store_credentials(
-                    existing_connection["vault_path"], credentials
+                    existing_connection["vault_path"], updated_credentials
                 )
 
         updated_connection = database_service.update_connection(

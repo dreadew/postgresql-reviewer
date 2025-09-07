@@ -10,7 +10,6 @@ def test_endpoint(name, response):
         return False
 
 
-# Test single review
 print("Testing single review...")
 response = requests.post(
     "http://localhost:8000/review",
@@ -28,8 +27,7 @@ test_endpoint("Single review", response)
 if response.status_code == 200:
     print("Single review response:", response.json())
 
-# Test config analysis
-print("\nTesting config analysis...")
+print("Testing config analysis...")
 config_response = requests.post(
     "http://localhost:8000/config/analyze",
     json={
@@ -45,8 +43,7 @@ test_endpoint("Config analysis", config_response)
 if config_response.status_code == 200:
     print("Config analysis response:", config_response.json())
 
-# Test batch review
-print("\nTesting batch review...")
+print("Testing batch review...")
 batch_response = requests.post(
     "http://localhost:8000/review/batch",
     json={

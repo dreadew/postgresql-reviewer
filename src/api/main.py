@@ -36,7 +36,6 @@ file_handler.setLevel(log_level)
 root_logger = logging.getLogger()
 root_logger.addHandler(file_handler)
 
-# Автоматическая загрузка правил для всех типов
 rules_base_dir = settings.kb_rules_dir
 if os.path.exists(rules_base_dir):
     for item in os.listdir(rules_base_dir):

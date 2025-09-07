@@ -1,9 +1,12 @@
-.PHONY: setup install test run docker-build docker-run clean
+.PHONY: create-venv install test run docker-build docker-run clean
 
-setup:
-	./setup.sh
+create-venv:
+	python3.11 -m venv .venv
+	source .venv/bin/activate
+	pip install --upgrade pip
 
 install:
+	create-venv
 	pip install -e .
 
 test:

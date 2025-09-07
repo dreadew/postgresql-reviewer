@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     )
     langsmith_project: str = os.getenv("LANGSMITH_PROJECT", "postgresql-reviewer")
 
+    langfuse_tracing: bool = os.getenv("LANGFUSE_TRACING", "false").lower() == "true"
+    langfuse_secret_key: Optional[str] = os.getenv("LANGFUSE_SECRET_KEY")
+    langfuse_public_key: Optional[str] = os.getenv("LANGFUSE_PUBLIC_KEY")
+    langfuse_host: str = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+
     log_level: str = "INFO"
     log_file: str = "./logs/postgresql-reviewer.log"
 
@@ -60,6 +65,12 @@ class Settings(BaseSettings):
 
     static_dir: str = "./src/api/static"
     logs_dir: str = "./logs"
+
+    scheduler_workers_count: int = int(os.getenv("SCHEDULER_WORKERS_COUNT", "1"))
+    scheduler_check_interval: int = int(os.getenv("SCHEDULER_CHECK_INTERVAL", "30"))
+    scheduler_api_url: str = os.getenv(
+        "SCHEDULER_API_URL", "http://postgresql-reviewer:8000"
+    )
 
     class Config:
         env_file = ".env"

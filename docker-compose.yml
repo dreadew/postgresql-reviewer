@@ -26,7 +26,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d/migrations
+      - ./migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 30s
@@ -37,7 +37,7 @@ services:
     image: redis:7-alpine
     container_name: redis-analyzer
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -53,20 +53,29 @@ services:
     container_name: analyzer-scheduler
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - VAULT_ADDR=${VAULT_ADDR}
+      - VAULT_ADDR=http://vault:8200
       - VAULT_TOKEN=${VAULT_TOKEN}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://redis:6379
       - LOG_LEVEL=${LOG_LEVEL}
       - LOG_FILE=${LOG_FILE}
+      - GIGACHAT_API_KEY=${GIGACHAT_API_KEY}
+      - GIGACHAT_MODEL_NAME=${GIGACHAT_MODEL_NAME}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
     volumes:
       - ./logs:/app/logs
+      - ./data:/app/data
+      - ./.env:/app/.env
     depends_on:
       - postgres
       - vault
       - redis
-    command: ["python", "-c", "from src.services.scheduler_service import SchedulerService; import asyncio; asyncio.run(SchedulerService().start_scheduler())"]
+    command: ["python", "-m", "src.scheduler.worker"]
+    restart: unless-stopped
 
   postgresql-reviewer:
+    container_name: postgresql-reviewer
     build: .
     ports:
       - "8000:8000"
@@ -82,9 +91,9 @@ services:
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
       - DATABASE_URL=${DATABASE_URL}
-      - VAULT_ADDR=${VAULT_ADDR}
+      - VAULT_ADDR=http://vault:8200
       - VAULT_TOKEN=${VAULT_TOKEN}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://redis:6379
       - DEBUG=${DEBUG}
       - LOG_LEVEL=${LOG_LEVEL}
       - LOG_FILE=${LOG_FILE}

@@ -20,6 +20,20 @@ def _read_rule_file(path: str) -> str:
         return f.read()
 
 
+def _extract_metadata_from_content(content: str) -> dict:
+    """Извлекает метаданные из содержимого правила."""
+    metadata = {}
+    lines = content.split("\n")
+
+    for line in lines:
+        if line.startswith("severity_default:"):
+            metadata["severity_default"] = line.split(":", 1)[1].strip()
+        elif line.startswith("description:"):
+            metadata["description"] = line.split(":", 1)[1].strip()
+
+    return metadata
+
+
 def ingest_rules(rules_dir: str, rule_type: str = "sql"):
     """Загружает правила определенного типа в соответствующий FAISS индекс."""
     rules_dir = os.path.abspath(rules_dir)
@@ -37,9 +51,12 @@ def ingest_rules(rules_dir: str, rule_type: str = "sql"):
     for p in files:
         text = _read_rule_file(p)
         title = Path(p).stem
+
+        metadata = _extract_metadata_from_content(text)
+
         chunks = splitter.split_text(text)
         for ch in chunks:
-            md = {"title": title, "source": p, "type": rule_type}
+            md = {"title": title, "source": p, "type": rule_type, **metadata}
             docs.append({"page_content": ch, "metadata": md})
 
     lc_docs = [

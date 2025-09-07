@@ -5,6 +5,7 @@
 from typing import Generator
 from fastapi import HTTPException, status
 from src.services.review_service import ReviewService
+from src.services.database_service import DatabaseService
 from src.core.config import settings
 
 
@@ -19,6 +20,11 @@ def get_review_service() -> Generator[ReviewService, None, None]:
 
     service = ReviewService(api_key=api_key)
     yield service
+
+
+def get_database_service() -> DatabaseService:
+    """Зависимость для DatabaseService."""
+    return DatabaseService()
 
 
 def get_environment() -> str:
