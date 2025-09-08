@@ -1,21 +1,34 @@
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import SimpleConnectionPool
+from sqlalchemy.orm import Session
 from src.core.config import settings
+from src.models.base import get_db
+from src.repositories.connections import (
+    ConnectionRepository,
+    ConnectionStatusRepository,
+)
+from src.repositories.tasks import ScheduledTaskRepository, TaskExecutionRepository
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
-    """Сервис для работы с PostgreSQL."""
+    """Сервис для работы с PostgreSQL (миграция на SQLAlchemy)."""
 
-    def __init__(self):
+    def __init__(self, db: Session = None):
         self.pool = None
         self._init_connection_pool()
+        self.db = db or next(get_db())
+
+        self.connection_repo = ConnectionRepository(self.db)
+        self.connection_status_repo = ConnectionStatusRepository(self.db)
+        self.task_repo = ScheduledTaskRepository(self.db)
+        self.execution_repo = TaskExecutionRepository(self.db)
 
     def _parse_database_url(self, database_url: str) -> Dict[str, Any]:
         """Парсинг database URL для получения параметров подключения."""
@@ -95,153 +108,124 @@ class DatabaseService:
                 self.release_connection(conn)
 
     def create_connection(self, connection_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Создать новое подключение."""
-        query = """
-            INSERT INTO connections (name, vault_path, environment, description, tags, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, name, vault_path, environment, description, tags, is_active,
-                     created_at, updated_at
-        """
-        params = (
-            connection_data["name"],
-            connection_data["vault_path"],
-            connection_data.get("environment", "development"),
-            connection_data.get("description"),
-            connection_data.get("tags", []),
-            connection_data["is_active"],
-        )
-
-        result = self.execute_query(query, params)
-        if result:
-            return result[0]
-        raise ValueError("Не удалось создать подключение")
+        """Создать новое подключение (SQLAlchemy)."""
+        try:
+            connection = self.connection_repo.create(connection_data)
+            return connection.to_dict()
+        except ValueError as e:
+            logger.error(f"Ошибка создания подключения: {e}")
+            raise
 
     def get_connections(self) -> List[Dict[str, Any]]:
-        """Получить все подключения."""
-        query = "SELECT * FROM connections ORDER BY created_at DESC"
-        return self.execute_query(query)
+        """Получить все подключения (SQLAlchemy)."""
+        connections = self.connection_repo.get_all()
+        return [conn.to_dict() for conn in connections]
 
     def get_connection_by_id(self, connection_id: int) -> Optional[Dict[str, Any]]:
-        """Получить подключение по ID."""
-        query = "SELECT * FROM connections WHERE id = %s"
-        result = self.execute_query(query, (connection_id,))
-        return result[0] if result else None
+        """Получить подключение по ID (SQLAlchemy)."""
+        connection = self.connection_repo.get_by_id(connection_id)
+        return connection.to_dict() if connection else None
 
     def update_connection(
         self, connection_id: int, update_data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """Обновить подключение."""
-        set_parts = []
-        params = []
-        for key, value in update_data.items():
-            if key != "id":
-                set_parts.append(f"{key} = %s")
-                params.append(value)
-
-        if not set_parts:
-            return self.get_connection_by_id(connection_id)
-
-        set_parts.append("updated_at = CURRENT_TIMESTAMP")
-        query = (
-            f"UPDATE connections SET {', '.join(set_parts)} WHERE id = %s RETURNING *"
-        )
-        params.append(connection_id)
-
-        result = self.execute_query(query, tuple(params))
-        return result[0] if result else None
+        """Обновить подключение (SQLAlchemy)."""
+        try:
+            connection = self.connection_repo.update(connection_id, update_data)
+            return connection.to_dict() if connection else None
+        except ValueError as e:
+            logger.error(f"Ошибка обновления подключения: {e}")
+            raise
 
     def delete_connection(self, connection_id: int) -> bool:
-        """Удалить подключение."""
-        query = "DELETE FROM connections WHERE id = %s"
-        try:
-            self.execute_query(query, (connection_id,), fetch=False)
-            return True
-        except Exception:
-            return False
+        """Удалить подключение (SQLAlchemy)."""
+        return self.connection_repo.delete(connection_id)
 
     def create_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Создать новую задачу."""
-        query = """
-            INSERT INTO scheduled_tasks (name, connection_id, schedule, task_type, parameters, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, name, connection_id, schedule, task_type, parameters, is_active,
-                     last_run, created_at, updated_at
-        """
-        params = (
-            task_data["name"],
-            task_data["connection_id"],
-            task_data["schedule"],
-            task_data["task_type"],
-            task_data.get("parameters", {}),
-            task_data["is_active"],
-        )
-
-        result = self.execute_query(query, params)
-        if result:
-            return result[0]
-        raise ValueError("Не удалось создать задачу")
+        """Создать новую задачу (SQLAlchemy)."""
+        try:
+            sqlalchemy_data = {
+                "name": task_data["name"],
+                "connection_id": task_data["connection_id"],
+                "cron_schedule": task_data.get(
+                    "schedule", task_data.get("cron_schedule")
+                ),
+                "task_type": task_data["task_type"],
+                "task_params": task_data.get(
+                    "parameters", task_data.get("task_params", {})
+                ),
+                "is_active": task_data.get("is_active", True),
+                "description": task_data.get("description"),
+            }
+            task = self.task_repo.create(sqlalchemy_data)
+            return task.to_dict()
+        except ValueError as e:
+            logger.error(f"Ошибка создания задачи: {e}")
+            raise
 
     def get_tasks(self) -> List[Dict[str, Any]]:
-        """Получить все задачи."""
-        query = "SELECT * FROM scheduled_tasks ORDER BY created_at DESC"
-        return self.execute_query(query)
+        """Получить все задачи (SQLAlchemy)."""
+        tasks = self.task_repo.get_all()
+        return [task.to_dict() for task in tasks]
 
     def get_task_by_id(self, task_id: int) -> Optional[Dict[str, Any]]:
-        """Получить задачу по ID."""
-        query = "SELECT * FROM scheduled_tasks WHERE id = %s"
-        result = self.execute_query(query, (task_id,))
-        return result[0] if result else None
+        """Получить задачу по ID (SQLAlchemy)."""
+        task = self.task_repo.get_by_id(task_id)
+        return task.to_dict() if task else None
 
     def update_task(
         self, task_id: int, update_data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """Обновить задачу."""
-        set_parts = []
-        params = []
-        for key, value in update_data.items():
-            if key != "id":
-                set_parts.append(f"{key} = %s")
-                params.append(value)
+        """Обновить задачу (SQLAlchemy)."""
+        try:
+            sqlalchemy_data = {}
+            if "schedule" in update_data:
+                sqlalchemy_data["cron_schedule"] = update_data["schedule"]
+            if "parameters" in update_data:
+                sqlalchemy_data["task_params"] = update_data["parameters"]
 
-        if not set_parts:
-            return self.get_task_by_id(task_id)
+            for key, value in update_data.items():
+                if key not in ["schedule", "parameters", "id"]:
+                    sqlalchemy_data[key] = value
 
-        set_parts.append("updated_at = CURRENT_TIMESTAMP")
-        query = f"UPDATE scheduled_tasks SET {', '.join(set_parts)} WHERE id = %s RETURNING *"
-        params.append(task_id)
-
-        result = self.execute_query(query, tuple(params))
-        return result[0] if result else None
+            task = self.task_repo.update(task_id, sqlalchemy_data)
+            return task.to_dict() if task else None
+        except ValueError as e:
+            logger.error(f"Ошибка обновления задачи: {e}")
+            raise
 
     def delete_task(self, task_id: int) -> bool:
-        """Удалить задачу."""
-        query = "DELETE FROM scheduled_tasks WHERE id = %s"
-        try:
-            self.execute_query(query, (task_id,), fetch=False)
-            return True
-        except Exception:
-            return False
+        """Удалить задачу (SQLAlchemy)."""
+        return self.task_repo.delete(task_id)
 
-    def update_task_last_run(self, task_id: int) -> bool:
-        """Обновить время последнего запуска задачи."""
-        query = "UPDATE scheduled_tasks SET last_run = CURRENT_TIMESTAMP WHERE id = %s"
-        try:
-            self.execute_query(query, (task_id,), fetch=False)
-            return True
-        except Exception:
-            return False
+    def update_task_last_run(self, task_id: int, last_run_at: datetime = None) -> bool:
+        """Обновить время последнего запуска задачи (SQLAlchemy)."""
+        return self.task_repo.update_last_run(task_id, last_run_at)
 
-    def create_task_execution(self, task_id: int) -> Dict[str, Any]:
-        """Создать новое выполнение задачи."""
-        query = """
-            INSERT INTO task_executions (task_id, status, started_at)
-            VALUES (%s, 'running', CURRENT_TIMESTAMP)
-            RETURNING id, task_id, status, started_at, completed_at, duration_ms, result, error_message
-        """
-        result = self.execute_query(query, (task_id,))
-        if result:
-            return result[0]
-        raise ValueError("Не удалось создать выполнение задачи")
+    def create_task_execution(
+        self, task_id: int, connection_id: int = None, task_type: str = None
+    ) -> Dict[str, Any]:
+        """Создать новое выполнение задачи (SQLAlchemy)."""
+        try:
+            if not connection_id or not task_type:
+                task = self.task_repo.get_by_id(task_id)
+                if not task:
+                    raise ValueError(f"Задача с ID {task_id} не найдена")
+                connection_id = connection_id or task.connection_id
+                task_type = task_type or task.task_type
+
+            execution_data = {
+                "scheduled_task_id": task_id,
+                "connection_id": connection_id,
+                "task_type": task_type,
+                "status": "running",
+                "started_at": datetime.now(timezone.utc),
+            }
+            execution = self.execution_repo.create(execution_data)
+            return execution.to_dict()
+        except Exception as e:
+            logger.error(f"Ошибка создания выполнения задачи: {e}")
+            raise
 
     def update_task_execution(
         self,
@@ -250,43 +234,31 @@ class DatabaseService:
         result: Dict[str, Any] = None,
         error_message: str = None,
     ) -> bool:
-        """Обновить выполнение задачи."""
-        query = """
-            UPDATE task_executions 
-            SET status = %s, completed_at = CURRENT_TIMESTAMP, 
-                duration_ms = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)) * 1000,
-                result = %s, error_message = %s
-            WHERE id = %s
-        """
+        """Обновить выполнение задачи (SQLAlchemy)."""
         try:
-            self.execute_query(
-                query, (status, result, error_message, execution_id), fetch=False
+            completed_at = (
+                datetime.now(timezone.utc)
+                if status in ["completed", "failed"]
+                else None
             )
-            return True
-        except Exception:
+            execution = self.execution_repo.update_status(
+                execution_id, status, completed_at, result, error_message
+            )
+            return execution is not None
+        except Exception as e:
+            logger.error(f"Ошибка обновления выполнения задачи: {e}")
             return False
 
     def get_task_executions(
         self, task_id: int = None, limit: int = 50
     ) -> List[Dict[str, Any]]:
-        """Получить историю выполнения задач."""
+        """Получить историю выполнения задач (SQLAlchemy)."""
         if task_id:
-            query = """
-                SELECT * FROM task_executions 
-                WHERE scheduled_task_id = %s 
-                ORDER BY started_at DESC LIMIT %s
-            """
-            params = (task_id, limit)
+            executions = self.execution_repo.get_by_task_id(task_id, limit)
         else:
-            query = """
-                SELECT te.*, st.name as task_name 
-                FROM task_executions te 
-                LEFT JOIN scheduled_tasks st ON te.scheduled_task_id = st.id 
-                ORDER BY te.started_at DESC LIMIT %s
-            """
-            params = (limit,)
+            executions = self.execution_repo.get_all(limit)
 
-        return self.execute_query(query, params)
+        return [execution.to_dict() for execution in executions]
 
     def update_connection_status(
         self,
@@ -296,54 +268,39 @@ class DatabaseService:
         response_time_ms: int = None,
         server_version: str = None,
     ) -> bool:
-        """Обновить статус подключения."""
-        query = """
-            INSERT INTO connection_status (connection_id, is_healthy, last_check, error_message, response_time_ms, server_version)
-            VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
-            ON CONFLICT (connection_id) 
-            DO UPDATE SET 
-                is_healthy = EXCLUDED.is_healthy,
-                last_check = EXCLUDED.last_check,
-                error_message = EXCLUDED.error_message,
-                response_time_ms = EXCLUDED.response_time_ms,
-                server_version = EXCLUDED.server_version
-        """
+        """Обновить статус подключения (SQLAlchemy)."""
         try:
-            self.execute_query(
-                query,
-                (
-                    connection_id,
-                    is_healthy,
-                    error_message,
-                    response_time_ms,
-                    server_version,
-                ),
-                fetch=False,
+            status_data = {
+                "connection_id": connection_id,
+                "is_healthy": is_healthy,
+                "last_check": datetime.now(timezone.utc),
+                "error_message": error_message,
+                "response_time_ms": response_time_ms,
+                "server_version": server_version,
+            }
+
+            existing_status = self.connection_status_repo.get_by_connection_id(
+                connection_id
             )
+
+            if existing_status:
+                self.connection_status_repo.update(existing_status.id, status_data)
+            else:
+                self.connection_status_repo.create(status_data)
+
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Ошибка обновления статуса подключения: {e}")
             return False
 
     def get_connection_status(self, connection_id: int = None) -> List[Dict[str, Any]]:
-        """Получить статус подключений."""
+        """Получить статус подключений (SQLAlchemy)."""
         if connection_id:
-            query = """
-                SELECT cs.*, c.name as connection_name, c.vault_path, c.environment
-                FROM connection_status cs
-                JOIN connections c ON cs.connection_id = c.id
-                WHERE cs.connection_id = %s
-            """
-            params = (connection_id,)
+            status = self.connection_status_repo.get_by_connection_id(connection_id)
+            return [status.to_dict()] if status else []
         else:
-            query = """
-                SELECT cs.*, c.name as connection_name, c.vault_path, c.environment
-                FROM connection_status cs
-                JOIN connections c ON cs.connection_id = c.id
-                ORDER BY cs.last_check DESC
-            """
-            params = ()
-
-        return self.execute_query(query, params)
+            statuses = self.connection_status_repo.get_all()
+            return [status.to_dict() for status in statuses]
 
     def fetch_one(self, query: str, *params) -> Optional[Dict[str, Any]]:
         """Выполнение запроса с получением одной записи."""

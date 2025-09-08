@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 import logging
 from src.api.schemas import ConnectionCreate, ConnectionResponse, ConnectionUpdate
 from src.services.vault_service import VaultService
-from src.services.database_service import database_service
+from src.services.database_service import DatabaseService
+from src.models.base import get_db
+from src.repositories.connections import ConnectionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +17,21 @@ CONNECTION_NOT_FOUND = "Подключение не найдено"
 vault_service = VaultService()
 
 
-def get_connection_or_404(connection_id: int) -> Dict[str, Any]:
+def get_connection_or_404(connection_id: int, db: Session) -> Dict[str, Any]:
     """Получить подключение по ID или вызвать HTTPException."""
-    connection = database_service.get_connection_by_id(connection_id)
+    connection_repo = ConnectionRepository(db)
+    connection = connection_repo.get_by_id(connection_id)
     if not connection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=CONNECTION_NOT_FOUND
         )
-    return connection
+    return connection.to_dict()
 
 
 @router.post("/", response_model=ConnectionResponse)
-async def create_connection(connection_data: ConnectionCreate):
+async def create_connection(
+    connection_data: ConnectionCreate, db: Session = Depends(get_db)
+):
     """Создать новое подключение к БД."""
     try:
         vault_path = f"secret/database/connections/{connection_data.name.replace(' ', '_').lower()}"
@@ -54,6 +60,7 @@ async def create_connection(connection_data: ConnectionCreate):
             "is_active": connection_data.is_active,
         }
 
+        database_service = DatabaseService(db)
         result = database_service.create_connection(connection_info)
 
         logger.info(f"Создано новое подключение: {connection_info['name']}")
@@ -70,27 +77,25 @@ async def create_connection(connection_data: ConnectionCreate):
 
 
 @router.get("/", response_model=List[ConnectionResponse])
-async def get_connections():
+async def get_connections(db: Session = Depends(get_db)):
     """Получить список всех подключений."""
     try:
+        database_service = DatabaseService(db)
         connections_data = database_service.get_connections()
-        connections = []
-        for conn in connections_data:
-            connections.append(ConnectionResponse(**conn))
-        return connections
+        return connections_data
     except Exception as e:
         logger.error(f"Ошибка получения подключений: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка получения подключений: {str(e)}",
+            detail="Ошибка получения подключений",
         )
 
 
 @router.get("/{connection_id}", response_model=ConnectionResponse)
-async def get_connection(connection_id: int):
+async def get_connection(connection_id: int, db: Session = Depends(get_db)):
     """Получить подключение по ID."""
     try:
-        connection = get_connection_or_404(connection_id)
+        connection = get_connection_or_404(connection_id, db)
         return ConnectionResponse(**connection)
     except HTTPException:
         raise
@@ -103,10 +108,12 @@ async def get_connection(connection_id: int):
 
 
 @router.put("/{connection_id}", response_model=ConnectionResponse)
-async def update_connection(connection_id: int, connection_data: ConnectionUpdate):
+async def update_connection(
+    connection_id: int, connection_data: ConnectionUpdate, db: Session = Depends(get_db)
+):
     """Обновить подключение."""
     try:
-        existing_connection = get_connection_or_404(connection_id)
+        existing_connection = get_connection_or_404(connection_id, db)
 
         update_data = connection_data.dict(exclude_unset=True)
 
@@ -127,6 +134,7 @@ async def update_connection(connection_id: int, connection_data: ConnectionUpdat
                     existing_connection["vault_path"], updated_credentials
                 )
 
+        database_service = DatabaseService(db)
         updated_connection = database_service.update_connection(
             connection_id, update_data
         )
@@ -150,13 +158,14 @@ async def update_connection(connection_id: int, connection_data: ConnectionUpdat
 
 
 @router.delete("/{connection_id}")
-async def delete_connection(connection_id: int):
+async def delete_connection(connection_id: int, db: Session = Depends(get_db)):
     """Удалить подключение."""
     try:
-        existing_connection = get_connection_or_404(connection_id)
+        existing_connection = get_connection_or_404(connection_id, db)
 
         vault_service.delete_credentials(existing_connection["vault_path"])
 
+        database_service = DatabaseService(db)
         success = database_service.delete_connection(connection_id)
         if not success:
             raise HTTPException(
