@@ -4,7 +4,8 @@
 
 API для управления планировщиком задач PostgreSQL Reviewer. Позволяет создавать, управлять и мониторить автоматические задачи анализа.
 
-**Base URL:** `/scheduler`
+**Base URL:** `/api/v1/scheduler`  
+**Legacy URL:** `/api/scheduler` (redirect to v1)
 
 ---
 
@@ -371,7 +372,7 @@ API для управления планировщиком задач PostgreSQL
 ### Create a Custom SQL Task
 
 ```bash
-curl -X POST "http://localhost:8000/scheduler/tasks" \
+curl -X POST "http://localhost:8000/api/v1/scheduler/tasks" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Daily Security Check",
@@ -388,11 +389,11 @@ curl -X POST "http://localhost:8000/scheduler/tasks" \
 ### Get All Active Tasks
 
 ```bash
-curl "http://localhost:8000/scheduler/tasks?is_active=true"
+curl "http://localhost:8000/api/v1/scheduler/tasks?is_active=true"
 ```
 
 ### Run Task Immediately
 
 ```bash
-curl -X POST "http://localhost:8000/scheduler/tasks/1/run"
+curl -X POST "http://localhost:8000/api/v1/scheduler/tasks/1/run"
 ```

@@ -23,12 +23,10 @@ class ScheduledTaskRepository(BaseRepository[ScheduledTask]):
     def create(self, task_data: Dict[str, Any]) -> ScheduledTask:
         """Создать новую запланированную задачу с валидацией."""
         try:
-            # Проверяем уникальность имени
             existing = self.get_by_name(task_data["name"])
             if existing:
                 raise ValueError(f"Task with name '{task_data['name']}' already exists")
 
-            # Используем метод базового класса
             return super().create(task_data)
 
         except IntegrityError as e:

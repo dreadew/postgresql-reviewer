@@ -4,7 +4,8 @@
 
 API для мониторинга состояния системы PostgreSQL Reviewer. Позволяет отслеживать выполнение задач, состояние подключений и общую производительность системы.
 
-**Base URL:** `/monitoring`
+**Base URL:** `/api/v1/monitoring`  
+**Legacy URL:** `/api/monitoring` (redirect to v1)
 
 ---
 

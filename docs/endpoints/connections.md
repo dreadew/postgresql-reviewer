@@ -6,7 +6,8 @@ API для управления подключениями к базам дан�
 
 **🔒 Безопасность:** Все учетные данные (host, port, database, username, password) хранятся только в Vault. В базе данных сохраняются только метаданные подключения.
 
-**Base URL:** `/connections`
+**Base URL:** `/api/v1/connections`  
+**Legacy URL:** `/api/connections` (redirect to v1)
 
 ---
 
@@ -24,7 +25,7 @@ API для управления подключениями к базам дан�
 
 ### 1. Create Connection
 
-**POST** `/connections/`
+**POST** `/api/v1/connections/`
 
 Создать новое подключение к базе данных PostgreSQL.
 
@@ -265,7 +266,7 @@ API для управления подключениями к базам дан�
 ### Create a New Connection
 
 ```bash
-curl -X POST "http://localhost:8000/connections/" \
+curl -X POST "http://localhost:8000/api/v1/connections/" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Production Database",
@@ -281,13 +282,13 @@ curl -X POST "http://localhost:8000/connections/" \
 ### Get All Connections
 
 ```bash
-curl "http://localhost:8000/connections/"
+curl "http://localhost:8000/api/v1/connections/"
 ```
 
 ### Update Connection (Change Only Host)
 
 ```bash
-curl -X PUT "http://localhost:8000/connections/1" \
+curl -X PUT "http://localhost:8000/api/v1/connections/1" \
   -H "Content-Type: application/json" \
   -d '{
     "host": "new-prod-db.example.com"
@@ -298,7 +299,7 @@ curl -X PUT "http://localhost:8000/connections/1" \
 
 ```bash
 # 1. Create connection
-curl -X POST "http://localhost:8000/connections/" \
+curl -X POST "http://localhost:8000/api/v1/connections/" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Test Connection",
@@ -311,7 +312,7 @@ curl -X POST "http://localhost:8000/connections/" \
   }'
 
 # 2. Use connection_id in scheduler task
-curl -X POST "http://localhost:8000/scheduler/tasks" \
+curl -X POST "http://localhost:8000/api/v1/scheduler/tasks" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Test Task",
@@ -324,5 +325,5 @@ curl -X POST "http://localhost:8000/scheduler/tasks" \
 ### Delete Connection
 
 ```bash
-curl -X DELETE "http://localhost:8000/connections/1"
+curl -X DELETE "http://localhost:8000/api/v1/connections/1"
 ```

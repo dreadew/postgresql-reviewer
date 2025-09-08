@@ -4,7 +4,8 @@
 
 API для анализа и проверки SQL запросов PostgreSQL. Позволяет анализировать отдельные запросы или пакеты запросов на предмет производительности, безопасности и соответствия best practices.
 
-**Base URL:** `/review`
+**Base URL:** `/api/v1/review`  
+**Legacy URL:** `/api/review` (redirect to v1)
 
 ---
 

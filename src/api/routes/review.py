@@ -39,7 +39,6 @@ async def review_sql(
 
         logger.info(f"Review result type: {type(result)}, result: {result}")
 
-        # Проверяем, что result является словарем
         if not isinstance(result, dict):
             logger.error(f"Expected dict result, got {type(result)}: {result}")
             result = {
@@ -78,7 +77,6 @@ async def review_batch(
                 }
             )
 
-            # Проверяем, что result является словарем
             if not isinstance(result, dict):
                 logger.error(
                     f"Expected dict result in batch, got {type(result)}: {result}"

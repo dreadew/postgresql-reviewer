@@ -30,7 +30,6 @@ class TagRepository(BaseRepository[Tag]):
                 logger.info(f"Created new tag: {name}")
             except IntegrityError:
                 self.db.rollback()
-                # Возможно тег уже создан в другой транзакции
                 tag = self.db.query(Tag).filter(Tag.name == name).first()
                 if not tag:
                     raise

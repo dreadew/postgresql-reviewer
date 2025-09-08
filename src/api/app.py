@@ -14,6 +14,11 @@ from src.api.routes.scheduler import router as scheduler_router
 from src.api.routes.logs import router as logs_router
 from src.core.config import settings
 
+API_V1_PREFIX = "/api/v1"
+API_V1_DOCS = f"{API_V1_PREFIX}/docs"
+API_V1_REDOC = f"{API_V1_PREFIX}/redoc"
+API_V1_OPENAPI = f"{API_V1_PREFIX}/openapi.json"
+
 
 def check_faiss_index() -> bool:
     """Проверить существование FAISS индекса."""
@@ -31,6 +36,9 @@ def create_application() -> FastAPI:
         description="ИИ-агент для ревью SQL-запросов PostgreSQL",
         version=settings.app_version,
         debug=settings.debug,
+        openapi_url=API_V1_OPENAPI,
+        docs_url=API_V1_DOCS,
+        redoc_url=API_V1_REDOC,
     )
 
     app.add_middleware(
@@ -46,21 +54,33 @@ def create_application() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
-    app.include_router(review_router)
-    app.include_router(config_router)
-    app.include_router(rules_router)
-    app.include_router(connections_router)
-    app.include_router(monitoring_router)
-    app.include_router(scheduler_router)
-    app.include_router(logs_router)
+    app.include_router(review_router, prefix=API_V1_PREFIX)
+    app.include_router(config_router, prefix=API_V1_PREFIX)
+    app.include_router(rules_router, prefix=API_V1_PREFIX)
+    app.include_router(connections_router, prefix=API_V1_PREFIX)
+    app.include_router(monitoring_router, prefix=API_V1_PREFIX)
+    app.include_router(scheduler_router, prefix=API_V1_PREFIX)
+    app.include_router(logs_router, prefix=API_V1_PREFIX)
+
+    app.include_router(review_router, prefix="/api")
+    app.include_router(config_router, prefix="/api")
+    app.include_router(rules_router, prefix="/api")
+    app.include_router(connections_router, prefix="/api")
+    app.include_router(monitoring_router, prefix="/api")
+    app.include_router(scheduler_router, prefix="/api")
+    app.include_router(logs_router, prefix="/api")
 
     @app.get("/")
     async def root():
         """Корневая страница с веб-интерфейсом."""
         return {
             "message": "PostgreSQL Reviewer API",
-            "docs": "/docs",
+            "version": settings.app_version,
+            "api_docs": API_V1_DOCS,
+            "api_redoc": API_V1_REDOC,
+            "api_openapi": API_V1_OPENAPI,
             "web_ui": "/static/index.html",
+            "health": "/health",
         }
 
     @app.get("/health")
@@ -80,6 +100,22 @@ def create_application() -> FastAPI:
             "static_files_available": static_exists,
             "environment": os.getenv("ENVIRONMENT", "development"),
             "timestamp": datetime.now(),
+        }
+
+    @app.get("/api/versions")
+    async def api_versions():
+        """Получить информацию о доступных версиях API."""
+        return {
+            "current_version": "v1",
+            "supported_versions": ["v1"],
+            "deprecated_versions": [],
+            "endpoints": {
+                "v1": {
+                    "docs": API_V1_DOCS,
+                    "redoc": API_V1_REDOC,
+                    "openapi": API_V1_OPENAPI,
+                }
+            },
         }
 
     return app
