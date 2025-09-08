@@ -397,3 +397,186 @@ curl "http://localhost:8000/api/v1/scheduler/tasks?is_active=true"
 ```bash
 curl -X POST "http://localhost:8000/api/v1/scheduler/tasks/1/run"
 ```
+
+---
+
+## Additional Endpoints
+
+### 12. Get Scheduler Status
+
+**GET** `/api/v1/scheduler/status`
+
+Получить общий статус планировщика и базовую статистику.
+
+#### Response
+
+```json
+{
+  "scheduler_running": false,
+  "redis_status": "connected",
+  "stats": {
+    "total_tasks": 16,
+    "active_tasks": 16,
+    "executions_24h": 6,
+    "failed_executions_24h": 2
+  },
+  "timestamp": "2025-09-08T08:25:23.421150"
+}
+```
+
+#### Status Codes
+
+- `200` - Success
+- `500` - Internal server error
+
+---
+
+### 13. Get Detailed Statistics
+
+**GET** `/api/v1/scheduler/stats`
+
+Получить детальную статистику работы планировщика.
+
+#### Response
+
+```json
+{
+  "task_types": [
+    {
+      "task_type": "log_analysis",
+      "total_count": 4,
+      "active_count": 4
+    }
+  ],
+  "daily_stats": [
+    {
+      "date": "2025-09-07",
+      "total_executions": 6,
+      "successful": 0,
+      "failed": 2,
+      "avg_duration_seconds": 5.043716
+    }
+  ],
+  "top_tasks": [
+    {
+      "name": "Log Analysis Task v2",
+      "task_type": "log_analysis",
+      "execution_count": 4,
+      "avg_duration_seconds": 10.085566
+    }
+  ],
+  "timestamp": "2025-09-08T08:25:12.435283"
+}
+```
+
+#### Status Codes
+
+- `200` - Success
+- `500` - Internal server error
+
+---
+
+### 14. Get Queue Status
+
+**GET** `/api/v1/scheduler/queue`
+
+Получить статус очереди задач и текущие выполнения.
+
+#### Response
+
+```json
+{
+  "queue_length": 0,
+  "pending_tasks": [],
+  "running_tasks": [
+    {
+      "execution_id": 5,
+      "task_name": "Custom Health Check - Analytics DB",
+      "task_type": "custom_sql",
+      "started_at": "2025-09-07T18:06:28.820479+00:00",
+      "status": "running"
+    }
+  ],
+  "redis_connected": true,
+  "timestamp": "2025-09-08T08:25:17.970332"
+}
+```
+
+#### Status Codes
+
+- `200` - Success
+- `500` - Internal server error
+
+---
+
+### 15. Start Scheduler
+
+**POST** `/api/v1/scheduler/start`
+
+Запустить планировщик задач.
+
+#### Response
+
+```json
+{
+  "message": "Планировщик запущен"
+}
+```
+
+#### Status Codes
+
+- `200` - Success
+- `500` - Internal server error
+
+---
+
+### 16. Stop Scheduler
+
+**POST** `/api/v1/scheduler/stop`
+
+Остановить планировщик задач.
+
+#### Response
+
+```json
+{
+  "message": "Планировщик остановлен"
+}
+```
+
+#### Status Codes
+
+- `200` - Success
+- `500` - Internal server error
+
+---
+
+## Examples
+
+### Get Scheduler Status
+
+```bash
+curl "http://localhost:8000/api/v1/scheduler/status"
+```
+
+### Get Detailed Statistics
+
+```bash
+curl "http://localhost:8000/api/v1/scheduler/stats"
+```
+
+### Get Queue Status
+
+```bash
+curl "http://localhost:8000/api/v1/scheduler/queue"
+```
+
+### Start/Stop Scheduler
+
+```bash
+# Start scheduler
+curl -X POST "http://localhost:8000/api/v1/scheduler/start"
+
+# Stop scheduler
+curl -X POST "http://localhost:8000/api/v1/scheduler/stop"
+```

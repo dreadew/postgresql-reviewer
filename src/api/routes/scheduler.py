@@ -276,3 +276,31 @@ async def stop_scheduler(scheduler: SchedulerService = Depends(get_scheduler_ser
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
+
+
+@router.get("/stats")
+async def get_scheduler_stats(
+    scheduler: SchedulerService = Depends(get_scheduler_service),
+):
+    """Получить детальную статистику планировщика."""
+    try:
+        stats = scheduler.get_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+@router.get("/queue")
+async def get_queue_status(
+    scheduler: SchedulerService = Depends(get_scheduler_service),
+):
+    """Получить статус очереди задач."""
+    try:
+        queue_status = await scheduler.get_queue_status()
+        return queue_status
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )

@@ -371,3 +371,254 @@ class SchedulerService:
         """Остановить планировщик."""
         self.is_running = False
         logger.info("Получен сигнал остановки планировщика")
+
+    async def start(self):
+        """Запустить планировщик (API метод)."""
+        if not self.is_running:
+            self.is_running = True
+            # Запускаем цикл планировщика в фоне
+            task = asyncio.create_task(self.start_scheduler_loop())
+            # Сохраняем ссылку на задачу для предотвращения сборки мусора
+            self._scheduler_task = task
+            logger.info("Планировщик запущен через API")
+        else:
+            logger.info("Планировщик уже запущен")
+
+    async def stop(self):
+        """Остановить планировщик (API метод)."""
+        self.stop_scheduler()
+        if hasattr(self, "_scheduler_task"):
+            try:
+                self._scheduler_task.cancel()
+                await self._scheduler_task
+            except asyncio.CancelledError:
+                # Задача была отменена, это ожидаемое поведение
+                pass
+        logger.info("Планировщик остановлен через API")
+
+    async def get_status(self):
+        """Получить статус планировщика."""
+        try:
+            # Используем прямое подключение для статистики
+            from src.models.base import get_db
+            from sqlalchemy import text
+
+            # Статистика задач
+            db = next(get_db())
+            try:
+                total_tasks = db.execute(
+                    text("SELECT COUNT(*) FROM scheduled_tasks")
+                ).scalar()
+                active_tasks = db.execute(
+                    text("SELECT COUNT(*) FROM scheduled_tasks WHERE is_active = true")
+                ).scalar()
+
+                # Последние выполнения
+                recent_executions = db.execute(
+                    text(
+                        """
+                    SELECT COUNT(*) FROM task_executions 
+                    WHERE started_at >= NOW() - INTERVAL '24 hours'
+                """
+                    )
+                ).scalar()
+
+                # Неудачные выполнения за последние 24 часа
+                failed_executions = db.execute(
+                    text(
+                        """
+                    SELECT COUNT(*) FROM task_executions 
+                    WHERE status = 'failed' AND started_at >= NOW() - INTERVAL '24 hours'
+                """
+                    )
+                ).scalar()
+            finally:
+                db.close()
+
+            # Статус Redis
+            redis_status = "connected" if self.redis_client else "disconnected"
+            if self.redis_client:
+                try:
+                    await self.redis_client.ping()
+                except Exception:
+                    redis_status = "error"
+
+            return {
+                "scheduler_running": self.is_running,
+                "redis_status": redis_status,
+                "stats": {
+                    "total_tasks": total_tasks or 0,
+                    "active_tasks": active_tasks or 0,
+                    "executions_24h": recent_executions or 0,
+                    "failed_executions_24h": failed_executions or 0,
+                },
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения статуса: {e}")
+            return {
+                "scheduler_running": self.is_running,
+                "redis_status": "unknown",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+    def get_stats(self):
+        """Получить детальную статистику планировщика."""
+        try:
+            from src.models.base import get_db
+            from sqlalchemy import text
+
+            db = next(get_db())
+            try:
+                # Статистика по типам задач
+                task_types_stats = db.execute(
+                    text(
+                        """
+                    SELECT task_type, COUNT(*) as count, 
+                           SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
+                    FROM scheduled_tasks 
+                    GROUP BY task_type
+                """
+                    )
+                ).fetchall()
+
+                # Статистика выполнений по дням (последние 7 дней)
+                daily_stats = db.execute(
+                    text(
+                        """
+                    SELECT DATE(started_at) as date, 
+                           COUNT(*) as total_executions,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful,
+                           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                           AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) as avg_duration_seconds
+                    FROM task_executions 
+                    WHERE started_at >= NOW() - INTERVAL '7 days'
+                    GROUP BY DATE(started_at)
+                    ORDER BY date DESC
+                """
+                    )
+                ).fetchall()
+
+                # Топ наиболее часто выполняемых задач
+                top_tasks = db.execute(
+                    text(
+                        """
+                    SELECT st.name, st.task_type, COUNT(te.id) as execution_count,
+                           AVG(EXTRACT(EPOCH FROM (te.completed_at - te.started_at))) as avg_duration
+                    FROM scheduled_tasks st
+                    LEFT JOIN task_executions te ON st.id = te.scheduled_task_id
+                    WHERE te.started_at >= NOW() - INTERVAL '30 days'
+                    GROUP BY st.id, st.name, st.task_type
+                    ORDER BY execution_count DESC
+                    LIMIT 10
+                """
+                    )
+                ).fetchall()
+            finally:
+                db.close()
+
+            return {
+                "task_types": [
+                    {"task_type": row[0], "total_count": row[1], "active_count": row[2]}
+                    for row in task_types_stats
+                ],
+                "daily_stats": [
+                    {
+                        "date": row[0].isoformat() if row[0] else None,
+                        "total_executions": row[1] or 0,
+                        "successful": row[2] or 0,
+                        "failed": row[3] or 0,
+                        "avg_duration_seconds": float(row[4]) if row[4] else 0,
+                    }
+                    for row in daily_stats
+                ],
+                "top_tasks": [
+                    {
+                        "name": row[0],
+                        "task_type": row[1],
+                        "execution_count": row[2] or 0,
+                        "avg_duration_seconds": float(row[3]) if row[3] else 0,
+                    }
+                    for row in top_tasks
+                ],
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики: {e}")
+            return {"error": str(e), "timestamp": datetime.now().isoformat()}
+
+    async def get_queue_status(self):
+        """Получить статус очереди задач."""
+        try:
+            queue_length = 0
+            pending_tasks = []
+
+            if self.redis_client:
+                # Получаем длину очереди
+                queue_length = await self.redis_client.llen("task_queue")
+
+                # Получаем несколько первых задач из очереди (без удаления)
+                raw_tasks = await self.redis_client.lrange("task_queue", 0, 9)
+
+                for raw_task in raw_tasks:
+                    try:
+                        task_data = json.loads(raw_task)
+                        pending_tasks.append(
+                            {
+                                "task_id": task_data.get("task_id"),
+                                "task_name": task_data.get("task_name"),
+                                "task_type": task_data.get("task_type"),
+                                "queued_at": task_data.get("queued_at"),
+                                "priority": task_data.get("priority", 0),
+                            }
+                        )
+                    except json.JSONDecodeError:
+                        continue
+
+            # Текущие выполняющиеся задачи
+            from src.models.base import get_db
+            from sqlalchemy import text
+
+            db = next(get_db())
+            try:
+                running_tasks = db.execute(
+                    text(
+                        """
+                    SELECT te.id, st.name, st.task_type, te.started_at, te.status
+                    FROM task_executions te
+                    JOIN scheduled_tasks st ON te.scheduled_task_id = st.id
+                    WHERE te.status = 'running'
+                    ORDER BY te.started_at
+                """
+                    )
+                ).fetchall()
+            finally:
+                db.close()
+
+            return {
+                "queue_length": queue_length,
+                "pending_tasks": pending_tasks,
+                "running_tasks": [
+                    {
+                        "execution_id": row[0],
+                        "task_name": row[1],
+                        "task_type": row[2],
+                        "started_at": row[3].isoformat() if row[3] else None,
+                        "status": row[4],
+                    }
+                    for row in running_tasks
+                ],
+                "redis_connected": self.redis_client is not None,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения статуса очереди: {e}")
+            return {
+                "error": str(e),
+                "queue_length": 0,
+                "pending_tasks": [],
+                "running_tasks": [],
+                "redis_connected": False,
+                "timestamp": datetime.now().isoformat(),
+            }
