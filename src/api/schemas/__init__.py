@@ -2,10 +2,54 @@
 Схемы Pydantic для запросов и ответов сервера.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, validator
+from src.core.constants import VALID_ENVIRONMENTS
+from src.core.utils.environment_mappings import normalize_environment
 from datetime import datetime
+from enum import Enum
 import croniter
+
+
+class TaskStatus(str, Enum):
+    """Статусы выполнения задач."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ConnectionStatus(BaseModel):
+    """Статус подключения к БД."""
+
+    connection_id: int
+    is_healthy: bool
+    last_check: datetime
+    error_message: Optional[str] = None
+    response_time_ms: Optional[int] = None
+    server_version: Optional[str] = None
+
+
+class TaskExecution(BaseModel):
+    """Запуск задачи."""
+
+    id: int
+    task_id: int
+    status: TaskStatus
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+class TaskExecutionCreate(BaseModel):
+    """Создание запуска задачи."""
+
+    task_id: int
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
 
 
 class ReviewRequest(BaseModel):
@@ -21,9 +65,12 @@ class ReviewRequest(BaseModel):
     @validator("environment")
     def validate_environment(cls, v):
         if v is not None:
-            valid_environments = ["dev", "test", "stage", "prod"]
-            if v not in valid_environments:
-                raise ValueError(f"Environment must be one of: {valid_environments}")
+            normalized = normalize_environment(v)
+            if normalized not in VALID_ENVIRONMENTS:
+                raise ValueError(
+                    f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+                )
+            return normalized
         return v
 
 
@@ -43,10 +90,12 @@ class BatchReviewRequest(BaseModel):
 
     @validator("environment")
     def validate_environment(cls, v):
-        valid_environments = ["dev", "test", "stage", "prod"]
-        if v not in valid_environments:
-            raise ValueError(f"Environment must be one of: {valid_environments}")
-        return v
+        normalized = normalize_environment(v)
+        if normalized not in VALID_ENVIRONMENTS:
+            raise ValueError(
+                f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+            )
+        return normalized
 
 
 class BatchReviewResponse(BaseModel):
@@ -128,26 +177,42 @@ class TaskResponse(TaskBase):
 
 class ConnectionBase(BaseModel):
     name: str
+    vault_path: str
+    is_active: bool = True
+    environment: str = "development"
+    description: Optional[str] = None
+    tags: List[str] = []
+
+    @validator("environment")
+    def validate_environment(cls, v):
+        normalized = normalize_environment(v)
+        if normalized not in VALID_ENVIRONMENTS:
+            raise ValueError(
+                f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+            )
+        return normalized
+
+
+class ConnectionCreate(ConnectionBase):
     host: str
     port: int = 5432
     database: str
     username: str
-    vault_path: str
-    is_active: bool = True
-
-
-class ConnectionCreate(ConnectionBase):
     password: str
 
 
 class ConnectionUpdate(BaseModel):
     name: Optional[str] = None
+    vault_path: Optional[str] = None
+    is_active: Optional[bool] = None
+    environment: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
     username: Optional[str] = None
-    vault_path: Optional[str] = None
-    is_active: Optional[bool] = None
+    password: Optional[str] = None
 
 
 class ConnectionResponse(ConnectionBase):

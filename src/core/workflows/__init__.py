@@ -7,13 +7,15 @@ import logging
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from src.core.types import AgentState, ConfigAgentState
+from src.core.types import AgentState, ConfigAgentState, LogsAgentState
 from src.core.utils.json_helper import safe_extract_json
 from src.core.agents.prompt_templates import (
     BASE_PROMPT_TEMPLATE,
     SYSTEM_REVIEWER_PROMPT,
     CONFIG_ANALYZE_TEMPLATE,
+    LOGS_ANALYZE_TEMPLATE,
 )
+from langfuse.langchain import CallbackHandler
 
 logger = logging.getLogger(__name__)
 from src.core.config import settings
@@ -45,6 +47,7 @@ class SQLReviewWorkflow:
 
     def _retrieve_rules_node(self, state: AgentState) -> AgentState:
         retrieved_rules = self._retrieve_rules(state["sql"])
+        logger.info(f"RETRIEVED RULES: {retrieved_rules}")
         state["retrieved_rules"] = retrieved_rules
         return state
 
@@ -74,6 +77,7 @@ class SQLReviewWorkflow:
         messages.append(HumanMessage(content=state["prompt"]))
 
         response = self.llm_service.invoke_with_messages(messages)
+        logger.info(f"LLM response type: {type(response)}, response: {response}")
         state["response"] = response
 
         if "chat_history" not in state:
@@ -86,16 +90,51 @@ class SQLReviewWorkflow:
         return state
 
     def _parse_response_node(self, state: AgentState) -> AgentState:
-        json_response = safe_extract_json(state["response"])
-        state["result"] = json.loads(json_response)
+        try:
+            logger.info(
+                f"Parsing response type: {type(state['response'])}, response: {state['response']}"
+            )
+            json_response = safe_extract_json(state["response"])
+            logger.info(f"Extracted JSON: {json_response}")
+            parsed_result = json.loads(json_response)
+            logger.info(
+                f"Parsed result type: {type(parsed_result)}, result: {parsed_result}"
+            )
+
+            if isinstance(parsed_result, dict):
+                state["result"] = parsed_result
+            else:
+                state["result"] = {
+                    "errors": [],
+                    "overall_score": 80,
+                    "notes": str(parsed_result),
+                    "analysis_summary": {},
+                }
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"Error parsing JSON response: {e}")
+            state["result"] = {
+                "errors": [
+                    {"content": "Failed to parse analysis result", "criticality": "low"}
+                ],
+                "overall_score": 70,
+                "notes": f"Analysis completed with parsing error: {str(e)}",
+                "analysis_summary": {},
+            }
         return state
 
     def _retrieve_rules(
         self, sql: str, top_k: int = settings.max_rules_to_retrieve
     ) -> List[Dict[str, Any]]:
         if not self.store:
+            logger.warning("Vector store is not initialized")
             return []
-        return self.store.similarity_search(sql, k=top_k)
+        try:
+            results = self.store.similarity_search(sql, k=top_k)
+            logger.info(f"Retrieved {len(results)} rules for SQL query")
+            return results
+        except Exception as e:
+            logger.error(f"Error retrieving rules: {e}")
+            return []
 
     def _compose_sql_prompt(
         self,
@@ -113,9 +152,11 @@ class SQLReviewWorkflow:
                 "row_estimate": t.get("row_estimate", 0),
                 "columns": [
                     {
-                        "name": c.get("name"),
-                        "type": c.get("type"),
-                        "indexed": c.get("indexed"),
+                        "name": c.get("name") if isinstance(c, dict) else c,
+                        "type": c.get("type", "") if isinstance(c, dict) else "",
+                        "indexed": (
+                            c.get("indexed", False) if isinstance(c, dict) else False
+                        ),
                     }
                     for c in t.get("columns", [])
                 ],
@@ -125,7 +166,8 @@ class SQLReviewWorkflow:
 
         rules_text = ""
         for r in retrieved_rules:
-            rules_text += f"- {r.get('title', '')}: {r.get('text', '')[:800]} (severity={r.get('severity_default', 'medium')})\n"
+            severity = r.get("metadata", {}).get("severity_default", "medium")
+            rules_text += f"- {r.get('title', '')}: {r.get('text', '')[:800]} (severity={severity})\n"
 
         return BASE_PROMPT_TEMPLATE.format(
             retrieved_rules=rules_text,
@@ -139,7 +181,10 @@ class SQLReviewWorkflow:
     def execute(
         self, initial_state: Dict[str, Any], thread_id: str = None
     ) -> Dict[str, Any]:
-        config = {"configurable": {"thread_id": thread_id or "default"}}
+        config = {
+            "configurable": {"thread_id": thread_id or "default"},
+            "callbacks": [CallbackHandler()],
+        }
         final_state = self.graph.invoke(initial_state, config=config)
         return final_state["result"]
 
@@ -192,8 +237,32 @@ class ConfigAnalysisWorkflow:
         return state
 
     def _parse_config_response_node(self, state: ConfigAgentState) -> ConfigAgentState:
-        json_response = safe_extract_json(state["response"])
-        state["result"] = json.loads(json_response)
+        try:
+            json_response = safe_extract_json(state["response"])
+            parsed_result = json.loads(json_response)
+
+            if isinstance(parsed_result, dict):
+                state["result"] = parsed_result
+            else:
+                state["result"] = {
+                    "errors": [],
+                    "overall_score": 80,
+                    "notes": str(parsed_result),
+                    "analysis_summary": {},
+                }
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"Error parsing config JSON response: {e}")
+            state["result"] = {
+                "errors": [
+                    {
+                        "content": "Failed to parse config analysis result",
+                        "criticality": "low",
+                    }
+                ],
+                "overall_score": 70,
+                "notes": f"Config analysis completed with parsing error: {str(e)}",
+                "analysis_summary": {},
+            }
         return state
 
     def _retrieve_config_rules(
@@ -225,6 +294,127 @@ class ConfigAnalysisWorkflow:
     def execute(
         self, initial_state: Dict[str, Any], thread_id: str = None
     ) -> Dict[str, Any]:
-        config = {"configurable": {"thread_id": thread_id or "config_analysis"}}
+        config = {
+            "configurable": {"thread_id": thread_id or "config_analysis"},
+            "callbacks": [CallbackHandler()],
+        }
+        final_state = self.graph.invoke(initial_state, config=config)
+        return final_state["result"]
+
+
+class LogsAnalysisWorkflow:
+    """Workflow для анализа логов."""
+
+    def __init__(self, llm_service, store):
+        self.llm_service = llm_service
+        self.store = store
+        self.graph = self._build_graph()
+
+    def _build_graph(self):
+        graph = StateGraph(LogsAgentState)
+        graph.add_node("retrieve_logs_rules", self._retrieve_logs_rules_node)
+        graph.add_node("compose_logs_prompt", self._compose_logs_prompt_node)
+        graph.add_node("call_logs_llm", self._call_logs_llm_node)
+        graph.add_node("parse_logs_response", self._parse_logs_response_node)
+
+        graph.add_edge(START, "retrieve_logs_rules")
+        graph.add_edge("retrieve_logs_rules", "compose_logs_prompt")
+        graph.add_edge("compose_logs_prompt", "call_logs_llm")
+        graph.add_edge("call_logs_llm", "parse_logs_response")
+        graph.add_edge("parse_logs_response", END)
+
+        return graph.compile(checkpointer=MemorySaver())
+
+    def _retrieve_logs_rules_node(self, state: LogsAgentState) -> LogsAgentState:
+        retrieved_rules = self._retrieve_logs_rules(state["logs"])
+        state["retrieved_rules"] = retrieved_rules
+        return state
+
+    def _compose_logs_prompt_node(self, state: LogsAgentState) -> LogsAgentState:
+        prompt = self._compose_logs_prompt(
+            state["logs"],
+            state["server_info"],
+            state["retrieved_rules"],
+            state["environment"],
+        )
+        state["prompt"] = prompt
+        return state
+
+    def _compose_logs_prompt(
+        self,
+        logs: str,
+        server_info: Dict[str, str],
+        retrieved_rules: List[Dict[str, Any]],
+        environment: str,
+    ) -> str:
+        rules_text = ""
+        for r in retrieved_rules:
+            rules_text += f"- {r.get('title', '')}: {r.get('text', '')[:800]}\n"
+
+        return LOGS_ANALYZE_TEMPLATE.format(
+            retrieved_rules=rules_text,
+            logs=logs,
+            server_info=json.dumps(server_info, indent=2),
+            environment=environment,
+        )
+
+    def _call_logs_llm_node(self, state: LogsAgentState) -> LogsAgentState:
+        messages = [
+            SystemMessage(content="Ты — эксперт по логам PostgreSQL."),
+            HumanMessage(content=state["prompt"]),
+        ]
+        response = self.llm_service.invoke_with_messages(messages)
+        state["response"] = response
+        return state
+
+    def _parse_logs_response_node(self, state: LogsAgentState) -> LogsAgentState:
+        try:
+            logger.info(
+                f"Raw LLM response for logs analysis: {state['response'][:500]}..."
+            )
+            json_response = safe_extract_json(state["response"])
+            logger.info(f"Extracted JSON: {json_response[:200]}...")
+            parsed_result = json.loads(json_response)
+
+            if isinstance(parsed_result, dict):
+                state["result"] = parsed_result
+            else:
+                state["result"] = {
+                    "errors": [],
+                    "overall_score": 80,
+                    "notes": str(parsed_result),
+                    "analysis_summary": {},
+                }
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing logs JSON response: {e}")
+            logger.error(f"Raw response causing error: {state['response']}")
+            state["result"] = {
+                "errors": [
+                    {
+                        "content": "Failed to parse logs analysis result",
+                        "criticality": "low",
+                    }
+                ],
+                "overall_score": 70,
+                "notes": f"Logs analysis completed with parsing error: {str(e)}",
+                "analysis_summary": {},
+            }
+        return state
+
+    def _retrieve_logs_rules(
+        self, logs: str, top_k: int = settings.max_rules_to_retrieve
+    ) -> List[Dict[str, Any]]:
+        if not self.store:
+            return []
+        search_query = logs[:500]
+        return self.store.similarity_search(search_query, k=top_k)
+
+    def execute(
+        self, initial_state: Dict[str, Any], thread_id: str = None
+    ) -> Dict[str, Any]:
+        config = {
+            "configurable": {"thread_id": thread_id or "logs_analysis"},
+            "callbacks": [CallbackHandler()],
+        }
         final_state = self.graph.invoke(initial_state, config=config)
         return final_state["result"]

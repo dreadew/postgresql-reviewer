@@ -39,3 +39,18 @@ ENVIRONMENT: {environment}
 4) Отдельно укажи общую оценку overall_score (0 — полный провал, 100 — отлично).
 5) Не пиши ничего лишнего — только JSON.
 """
+
+LOGS_ANALYZE_TEMPLATE = """
+ДАННЫЕ ПРАВИЛА (RETRIEVED_RULES):
+{retrieved_rules}
+ВХОДНЫЕ ДАННЫЕ:
+LOGS: {logs}
+SERVER_RESOURCES: {server_info}
+ENVIRONMENT: {environment}
+ЗАДАЧА:
+1) Проанализируй логи PostgreSQL.
+2) Для каждой найденной проблемы: укажи content, criticality (critical|high|medium|low), и конкретную recommendation. Учитывай environment: в prod среде ошибки критичнее.
+3) Если замечаний нет, верни errors как пустой список [], overall_score=100, и в notes укажи "В логах критических ошибок не обнаружено".
+4) Отдельно укажи общую оценку overall_score (0 — полный провал, 100 — отлично).
+5) Не пиши ничего лишнего — только JSON.
+"""

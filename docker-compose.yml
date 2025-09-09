@@ -1,17 +1,120 @@
-version: '3.8'
-
 services:
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN}
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-analyzer
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  
+  redis:
+    image: redis:7-alpine
+    container_name: redis-analyzer
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: analyzer-scheduler
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_TOKEN}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_FILE=${LOG_FILE}
+      - GIGACHAT_API_KEY=${GIGACHAT_API_KEY}
+      - GIGACHAT_MODEL_NAME=${GIGACHAT_MODEL_NAME}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./.env:/app/.env
+    depends_on:
+      - postgres
+      - vault
+      - redis
+    command: ["python", "-m", "src.scheduler.worker"]
+    restart: unless-stopped
+
   postgresql-reviewer:
+    container_name: postgresql-reviewer
     build: .
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
       - ./.env:/app/.env
     environment:
       - GIGACHAT_API_KEY=${GIGACHAT_API_KEY}
+      - GIGACHAT_MODEL_NAME=${GIGACHAT_MODEL_NAME}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING}
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      - DATABASE_URL=${DATABASE_URL}
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_TOKEN}
+      - REDIS_URL=redis://redis:6379
+      - DEBUG=${DEBUG}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_FILE=${LOG_FILE}
+      - VECTOR_STORE=${VECTOR_STORE}
+      - FAISS_PERSIST_DIR=${FAISS_PERSIST_DIR}
+      - KB_RULES_DIR=${KB_RULES_DIR}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL}
+      - TOKENIZERS_PARALLELISM=${TOKENIZERS_PARALLELISM}
+      - CHUNK_SIZE=${CHUNK_SIZE}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP}
+      - MAX_RULES_TO_RETRIEVE=${MAX_RULES_TO_RETRIEVE}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW}
+      - STATIC_DIR=${STATIC_DIR}
+      - LOGS_DIR=${LOGS_DIR}
+    depends_on:
+      - postgres
+      - vault
+      - redis
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,6 +1,5 @@
 import os
 import glob
-import logging
 from pathlib import Path
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -9,17 +8,36 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.document import Document
 from src.core.config import settings
 
+from src.core.constants import FILE_ENCODING
+
+import logging
+
 logger = logging.getLogger(__name__)
 
 
 def _read_rule_file(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding=FILE_ENCODING) as f:
         return f.read()
 
 
-def ingest_rules(rules_dir: str):
+def _extract_metadata_from_content(content: str) -> dict:
+    """Извлекает метаданные из содержимого правила."""
+    metadata = {}
+    lines = content.split("\n")
+
+    for line in lines:
+        if line.startswith("severity_default:"):
+            metadata["severity_default"] = line.split(":", 1)[1].strip()
+        elif line.startswith("description:"):
+            metadata["description"] = line.split(":", 1)[1].strip()
+
+    return metadata
+
+
+def ingest_rules(rules_dir: str, rule_type: str = "sql"):
+    """Загружает правила определенного типа в соответствующий FAISS индекс."""
     rules_dir = os.path.abspath(rules_dir)
-    files = sorted(glob.glob(os.path.join(rules_dir, "*.md")))
+    files = sorted(glob.glob(os.path.join(rules_dir, "**", "*.md"), recursive=True))
     if not files:
         logger.warning(f"Файлы с правилами не найдены в {rules_dir}")
         return
@@ -33,16 +51,20 @@ def ingest_rules(rules_dir: str):
     for p in files:
         text = _read_rule_file(p)
         title = Path(p).stem
+
+        metadata = _extract_metadata_from_content(text)
+
         chunks = splitter.split_text(text)
         for ch in chunks:
-            md = {"title": title, "source": p}
+            md = {"title": title, "source": p, "type": rule_type, **metadata}
             docs.append({"page_content": ch, "metadata": md})
 
     lc_docs = [
         Document(page_content=d["page_content"], metadata=d["metadata"]) for d in docs
     ]
     store = FAISS.from_documents(lc_docs, embeddings)
-    persist_dir = settings.faiss_persist_dir
+
+    persist_dir = os.path.join(settings.faiss_persist_dir, rule_type)
     os.makedirs(persist_dir, exist_ok=True)
     store.save_local(persist_dir)
-    logger.info(f"FAISS индекс успешно сохранен в {persist_dir}")
+    logger.info(f"FAISS индекс для {rule_type} успешно сохранен в {persist_dir}")

@@ -4,7 +4,11 @@
 
 from typing import List, Dict, Any
 from src.core.agents.base import BaseAgent, LLMService
-from src.core.workflows import SQLReviewWorkflow, ConfigAnalysisWorkflow
+from src.core.workflows import (
+    SQLReviewWorkflow,
+    ConfigAnalysisWorkflow,
+    LogsAnalysisWorkflow,
+)
 from src.store.factory import VectorStoreFactory
 from src.core.config import settings
 
@@ -19,11 +23,13 @@ class GigaChatAgent(BaseAgent):
 
         self.sql_store = VectorStoreFactory.create("sql")
         self.config_store = VectorStoreFactory.create("config")
+        self.logs_store = VectorStoreFactory.create("logs")
 
         self.sql_workflow = SQLReviewWorkflow(self.llm_service, self.sql_store)
         self.config_workflow = ConfigAnalysisWorkflow(
             self.llm_service, self.config_store
         )
+        self.logs_workflow = LogsAnalysisWorkflow(self.llm_service, self.logs_store)
 
     def review(
         self,
@@ -66,3 +72,17 @@ class GigaChatAgent(BaseAgent):
         }
 
         return self.config_workflow.execute(initial_state)
+
+    def analyze_logs(
+        self, logs: str, server_info: Dict[str, str], environment: str = "test"
+    ) -> Dict[str, Any]:
+        initial_state = {
+            "logs": logs,
+            "server_info": server_info,
+            "prompt": "",
+            "response": "",
+            "result": {},
+            "environment": environment,
+        }
+
+        return self.logs_workflow.execute(initial_state)

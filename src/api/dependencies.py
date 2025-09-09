@@ -5,12 +5,13 @@
 from typing import Generator
 from fastapi import HTTPException, status
 from src.services.review_service import ReviewService
-import os
+from src.services.database_service import DatabaseService
+from src.core.config import settings
 
 
 def get_review_service() -> Generator[ReviewService, None, None]:
     """Зависимость для ReviewService."""
-    api_key = os.getenv("GIGACHAT_API_KEY")
+    api_key = settings.gigachat_api_key
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -21,6 +22,11 @@ def get_review_service() -> Generator[ReviewService, None, None]:
     yield service
 
 
+def get_database_service() -> DatabaseService:
+    """Зависимость для DatabaseService."""
+    return DatabaseService()
+
+
 def get_environment() -> str:
     """Получить текущее окружение."""
-    return os.getenv("ENVIRONMENT", "test")
+    return settings.environment

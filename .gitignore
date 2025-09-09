@@ -10,3 +10,5 @@ venv/
 data/
 *.log
 .DS_Store
+/logs/
+!src/kb/rules/logs/

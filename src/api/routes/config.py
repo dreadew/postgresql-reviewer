@@ -1,3 +1,4 @@
+import ssl
 from fastapi import APIRouter, HTTPException, Depends
 from src.api.schemas import ConfigRequest
 from src.services.review_service import ReviewService
@@ -15,10 +16,16 @@ async def analyze_config(
         result = service.analyze_config(
             {
                 "config": request.config,
+                "server_info": request.server_info,
                 "environment": request.environment,
             }
         )
         return result
 
+    except ssl.SSLError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка SSL соединения при анализе конфигурации: {str(e)}",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
