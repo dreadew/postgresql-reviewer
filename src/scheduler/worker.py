@@ -196,7 +196,7 @@ class TaskWorker:
             if not logs_content:
                 logs_content = "Нет доступных логов для анализа"
 
-            api_url = f"{settings.scheduler_api_url}/logs/analyze"
+            api_url = f"{settings.scheduler_api_url}/api/v1/logs/analyze"
 
             postgresql_version = self._get_postgresql_version(connection_data)
 
@@ -336,7 +336,7 @@ class TaskWorker:
                         "description": row["short_desc"],
                     }
 
-                api_url = f"{settings.scheduler_api_url}/config/analyze"
+                api_url = f"{settings.scheduler_api_url}/api/v1/config/analyze"
 
                 postgresql_version = self._get_postgresql_version(connection_data)
 

@@ -1,4 +1,5 @@
 import uuid
+import ssl
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -50,6 +51,12 @@ async def review_sql(
         result["thread_id"] = thread_id
         return result
 
+    except ssl.SSLError as e:
+        logger.error(f"SSL Error in SQL review: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка SSL соединения при анализе SQL: {str(e)}"
+        )
     except Exception as e:
         logger.error(f"Error in SQL review: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -98,5 +105,11 @@ async def review_batch(
             results=results, overall_score=overall_score, passed=passed
         )
 
+    except ssl.SSLError as e:
+        logger.error(f"SSL Error in batch review: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка SSL соединения при пакетном анализе SQL: {str(e)}"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -76,6 +76,34 @@ async def get_scheduled_tasks(
         )
 
 
+@router.get("/tasks/{task_id}/executions", response_model=List[TaskExecutionResponse])
+async def get_task_executions_by_task_id(
+    task_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """Получить историю выполнения для конкретной задачи."""
+    try:
+        database_service = DatabaseService(db)
+        
+        # Проверим, что задача существует
+        task = database_service.task_repo.get_by_id(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=TASK_NOT_FOUND,
+            )
+        
+        executions = database_service.get_task_executions(task_id=task_id, limit=limit)
+        return [TaskExecutionResponse(**execution) for execution in executions]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
 @router.get("/tasks/{task_id}", response_model=ScheduledTaskResponse)
 async def get_scheduled_task(task_id: int, db: Session = Depends(get_db)):
     """Получить запланированную задачу по ID."""
@@ -213,9 +241,7 @@ async def get_task_execution(execution_id: int, db: Session = Depends(get_db)):
     """Получить информацию о выполнении задачи."""
     try:
         database_service = DatabaseService(db)
-        executions = database_service.get_task_executions(limit=1)
-
-        execution = next((e for e in executions if e.get("id") == execution_id), None)
+        execution = database_service.execution_repo.get_by_id(execution_id)
 
         if not execution:
             raise HTTPException(
@@ -223,7 +249,7 @@ async def get_task_execution(execution_id: int, db: Session = Depends(get_db)):
                 detail="Выполнение задачи не найдено",
             )
 
-        return TaskExecutionResponse(**execution)
+        return TaskExecutionResponse(**execution.to_dict())
     except HTTPException:
         raise
     except Exception as e:
