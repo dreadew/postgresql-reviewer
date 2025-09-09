@@ -7,7 +7,7 @@ def _find_json_objects(text: str) -> list:
     candidates = []
     brace_count = 0
     start_pos = -1
-    
+
     for i, char in enumerate(text):
         if char == "{":
             if brace_count == 0:
@@ -19,7 +19,7 @@ def _find_json_objects(text: str) -> list:
                 candidate = text[start_pos : i + 1]
                 candidates.append(candidate)
                 start_pos = -1
-    
+
     return candidates
 
 
@@ -28,7 +28,7 @@ def _find_json_arrays(text: str) -> list:
     candidates = []
     bracket_count = 0
     start_pos = -1
-    
+
     for i, char in enumerate(text):
         if char == "[":
             if bracket_count == 0:
@@ -40,7 +40,7 @@ def _find_json_arrays(text: str) -> list:
                 candidate = text[start_pos : i + 1]
                 candidates.append(candidate)
                 start_pos = -1
-    
+
     return candidates
 
 
@@ -73,12 +73,12 @@ def safe_extract_json(text: str) -> str:
     result = _validate_json_candidates(candidates)
     if result:
         return result
-    
+
     # Если не нашли валидный JSON, попробуем весь текст как JSON
     try:
         json.loads(text)
         return text
     except json.JSONDecodeError:
         pass
-    
+
     raise ValueError("Не удалось найти валидный JSON объект или массив")

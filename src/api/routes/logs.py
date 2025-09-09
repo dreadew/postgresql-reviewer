@@ -48,8 +48,8 @@ async def analyze_logs(
 
     except ssl.SSLError as e:
         raise HTTPException(
-            status_code=503, 
-            detail=f"Ошибка SSL соединения с AI сервисом: {str(e)}. Попробуйте позже."
+            status_code=503,
+            detail=f"Ошибка SSL соединения с AI сервисом: {str(e)}. Попробуйте позже.",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка анализа логов: {str(e)}")

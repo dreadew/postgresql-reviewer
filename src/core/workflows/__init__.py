@@ -369,7 +369,9 @@ class LogsAnalysisWorkflow:
 
     def _parse_logs_response_node(self, state: LogsAgentState) -> LogsAgentState:
         try:
-            logger.info(f"Raw LLM response for logs analysis: {state['response'][:500]}...")
+            logger.info(
+                f"Raw LLM response for logs analysis: {state['response'][:500]}..."
+            )
             json_response = safe_extract_json(state["response"])
             logger.info(f"Extracted JSON: {json_response[:200]}...")
             parsed_result = json.loads(json_response)

@@ -216,7 +216,7 @@ class TaskWorker:
 
                 analysis_result = response.json()
 
-                await self.save_analysis_result(
+                self.save_analysis_result(
                     connection_data["connection_id"], "log_analysis", analysis_result
                 )
 
@@ -358,7 +358,7 @@ class TaskWorker:
 
                     analysis_result["config_details"] = config
 
-                    await self.save_analysis_result(
+                    self.save_analysis_result(
                         connection_data["connection_id"],
                         "config_check",
                         analysis_result,
@@ -492,7 +492,7 @@ class TaskWorker:
 
             conn.close()
 
-            await self.save_analysis_result(
+            self.save_analysis_result(
                 connection_data["connection_id"], "custom_sql", result
             )
 
@@ -559,7 +559,7 @@ class TaskWorker:
                 "detailed_analysis": detailed_analysis,
             }
 
-            await self.save_analysis_result(
+            self.save_analysis_result(
                 connection_data["connection_id"], "table_analysis", result
             )
 
@@ -675,7 +675,7 @@ class TaskWorker:
         except Exception as e:
             return {"table": table_name, "error": str(e)}
 
-    async def save_analysis_result(
+    def save_analysis_result(
         self, connection_id: int, analysis_type: str, result: Dict[str, Any]
     ):
         """Сохранить результат анализа в БД."""
@@ -695,9 +695,11 @@ class TaskWorker:
                 )
             """
 
-            await self.db_service.execute_query(create_table_query)
-            await self.db_service.execute_query(
-                query, connection_id, analysis_type, json.dumps(result), datetime.now()
+            self.db_service.execute_query(create_table_query, fetch=False)
+            self.db_service.execute_query(
+                query,
+                (connection_id, analysis_type, json.dumps(result), datetime.now()),
+                fetch=False,
             )
 
             logger.info(f"Результат анализа сохранен для подключения {connection_id}")

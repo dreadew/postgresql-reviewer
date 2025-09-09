@@ -24,8 +24,8 @@ async def analyze_config(
 
     except ssl.SSLError as e:
         raise HTTPException(
-            status_code=500, 
-            detail=f"Ошибка SSL соединения при анализе конфигурации: {str(e)}"
+            status_code=500,
+            detail=f"Ошибка SSL соединения при анализе конфигурации: {str(e)}",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

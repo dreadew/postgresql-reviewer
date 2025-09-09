@@ -85,7 +85,7 @@ async def get_task_executions_by_task_id(
     """Получить историю выполнения для конкретной задачи."""
     try:
         database_service = DatabaseService(db)
-        
+
         # Проверим, что задача существует
         task = database_service.task_repo.get_by_id(task_id)
         if not task:
@@ -93,7 +93,7 @@ async def get_task_executions_by_task_id(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=TASK_NOT_FOUND,
             )
-        
+
         executions = database_service.get_task_executions(task_id=task_id, limit=limit)
         return [TaskExecutionResponse(**execution) for execution in executions]
     except HTTPException:

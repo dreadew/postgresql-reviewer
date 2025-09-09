@@ -54,8 +54,7 @@ async def review_sql(
     except ssl.SSLError as e:
         logger.error(f"SSL Error in SQL review: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, 
-            detail=f"Ошибка SSL соединения при анализе SQL: {str(e)}"
+            status_code=500, detail=f"Ошибка SSL соединения при анализе SQL: {str(e)}"
         )
     except Exception as e:
         logger.error(f"Error in SQL review: {e}", exc_info=True)
@@ -108,8 +107,8 @@ async def review_batch(
     except ssl.SSLError as e:
         logger.error(f"SSL Error in batch review: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, 
-            detail=f"Ошибка SSL соединения при пакетном анализе SQL: {str(e)}"
+            status_code=500,
+            detail=f"Ошибка SSL соединения при пакетном анализе SQL: {str(e)}",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

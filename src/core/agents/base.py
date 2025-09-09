@@ -17,7 +17,7 @@ class BaseAgent(ABC):
     def __init__(self, api_key: str, model_name: str = "GigaChat"):
         if not api_key:
             raise ValueError("API key is required")
-        
+
         # Сначала пробуем с включенной проверкой SSL
         try:
             self.model = GigaChat(
@@ -96,12 +96,12 @@ class LLMService:
         except (ssl.SSLError, requests.exceptions.SSLError) as e:
             print(f"SSL Error during invocation: {e}")
             print("Recreating model with SSL verification disabled...")
-            
+
             # Пересоздаем модель без проверки SSL
             try:
-                old_model_name = getattr(self.model, 'model_name', 'GigaChat')
-                old_credentials = getattr(self.model, 'credentials', None)
-                
+                old_model_name = getattr(self.model, "model_name", "GigaChat")
+                old_credentials = getattr(self.model, "credentials", None)
+
                 self.model = GigaChat(
                     model=old_model_name,
                     credentials=old_credentials,
@@ -115,7 +115,9 @@ class LLMService:
                 return response.content
             except Exception as retry_error:
                 print(f"Retry with disabled SSL also failed: {retry_error}")
-                raise ssl.SSLError(f"SSL connection failed even with disabled verification: {e}") from e
+                raise ssl.SSLError(
+                    f"SSL connection failed even with disabled verification: {e}"
+                ) from e
         except Exception as e:
             print(f"Unexpected error in LLM service: {e}")
             raise
