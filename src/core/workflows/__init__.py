@@ -369,7 +369,9 @@ class LogsAnalysisWorkflow:
 
     def _parse_logs_response_node(self, state: LogsAgentState) -> LogsAgentState:
         try:
+            logger.info(f"Raw LLM response for logs analysis: {state['response'][:500]}...")
             json_response = safe_extract_json(state["response"])
+            logger.info(f"Extracted JSON: {json_response[:200]}...")
             parsed_result = json.loads(json_response)
 
             if isinstance(parsed_result, dict):
@@ -381,8 +383,9 @@ class LogsAnalysisWorkflow:
                     "notes": str(parsed_result),
                     "analysis_summary": {},
                 }
-        except (json.JSONDecodeError, TypeError) as e:
+        except (ValueError, TypeError) as e:
             logger.error(f"Error parsing logs JSON response: {e}")
+            logger.error(f"Raw response causing error: {state['response']}")
             state["result"] = {
                 "errors": [
                     {
