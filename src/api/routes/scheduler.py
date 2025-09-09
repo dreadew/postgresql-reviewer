@@ -66,7 +66,6 @@ async def get_scheduled_tasks(
         database_service = DatabaseService(db)
         tasks = database_service.get_tasks()
 
-        # Фильтруем по активности если необходимо
         if is_active is not None:
             tasks = [task for task in tasks if task.get("is_active") == is_active]
 
@@ -106,14 +105,12 @@ async def update_scheduled_task(
     try:
         database_service = DatabaseService(db)
 
-        # Проверяем существование задачи
         existing_task = database_service.get_task_by_id(task_id)
         if not existing_task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=TASK_NOT_FOUND
             )
 
-        # Обновляем задачу
         update_data = task_data.dict(exclude_unset=True)
         updated_task = database_service.update_task(task_id, update_data)
 
@@ -142,17 +139,15 @@ async def delete_scheduled_task(
     try:
         database_service = DatabaseService(db)
 
-        # Проверяем существование задачи
         existing_task = database_service.get_task_by_id(task_id)
         if not existing_task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=TASK_NOT_FOUND
             )
 
-        # Удаляем задачу из планировщика
+        # Удаляем задачу из планировщика (очищаем Redis очередь)
         await scheduler.remove_task_from_schedule(task_id)
 
-        # Удаляем задачу из базы данных
         success = database_service.delete_task(task_id)
         if not success:
             raise HTTPException(
@@ -179,14 +174,12 @@ async def execute_task_manually(
     try:
         database_service = DatabaseService(db)
 
-        # Проверяем существование задачи
         task = database_service.get_task_by_id(task_id)
         if not task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=TASK_NOT_FOUND
             )
 
-        # Запускаем задачу
         execution = await scheduler.execute_task_manually(task_id)
 
         return {"message": "Задача запущена", "execution_id": execution.get("id")}
@@ -222,7 +215,6 @@ async def get_task_execution(execution_id: int, db: Session = Depends(get_db)):
         database_service = DatabaseService(db)
         executions = database_service.get_task_executions(limit=1)
 
-        # Ищем нужное выполнение
         execution = next((e for e in executions if e.get("id") == execution_id), None)
 
         if not execution:

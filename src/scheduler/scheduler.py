@@ -25,6 +25,15 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _prepare_task_dict(task_dict: dict) -> dict:
+    """Подготовить словарь задачи для ScheduledTaskResponse."""
+    if isinstance(task_dict.get("task_params"), str):
+        task_dict["task_params"] = json.loads(task_dict["task_params"])
+    elif task_dict.get("task_params") is None:
+        task_dict["task_params"] = {}
+    return task_dict
+
+
 class SchedulerService:
     """Сервис планировщика задач."""
 
@@ -95,12 +104,12 @@ class SchedulerService:
             logger.error(f"Ошибка создания задачи: {e}")
             raise
 
-    async def update_scheduled_task(
+    def update_scheduled_task(
         self, task_id: int, task_data: ScheduledTaskUpdate
     ) -> Optional[ScheduledTaskResponse]:
         """Обновить запланированную задачу."""
         try:
-            current_task = await self.get_scheduled_task(task_id)
+            current_task = self.get_scheduled_task(task_id)
             if not current_task:
                 return None
 
@@ -159,6 +168,57 @@ class SchedulerService:
             logger.error(f"Ошибка обновления задачи {task_id}: {e}")
             raise
 
+    async def remove_task_from_schedule(self, task_id: int) -> bool:
+        """Удалить задачу только из планировщика (без удаления из БД)."""
+        try:
+            removed_count = 0
+            cancelled_executions = 0
+
+            if self.redis_client:
+                queue_tasks = await self.redis_client.lrange("task_queue", 0, -1)
+
+                await self.redis_client.delete("task_queue")
+
+                for task_json in queue_tasks:
+                    try:
+                        task_data = json.loads(task_json)
+                        if task_data.get("scheduled_task_id") != task_id:
+                            await self.redis_client.lpush("task_queue", task_json)
+                        else:
+                            removed_count += 1
+                    except json.JSONDecodeError:
+                        await self.redis_client.lpush("task_queue", task_json)
+
+            try:
+                cancel_query = """
+                    UPDATE task_executions 
+                    SET status = 'cancelled', completed_at = NOW()
+                    WHERE scheduled_task_id = %s AND status IN ('running', 'pending')
+                """
+                await self.db_service.execute_query(cancel_query, task_id)
+
+                count_query = """
+                    SELECT COUNT(*) FROM task_executions 
+                    WHERE scheduled_task_id = %s AND status = 'cancelled'
+                """
+                result = self.db_service.fetch_one(count_query, task_id)
+                if result:
+                    cancelled_executions = result[0] or 0
+
+            except Exception as db_error:
+                logger.warning(
+                    f"Не удалось отменить выполнения задачи {task_id}: {db_error}"
+                )
+
+            logger.info(
+                f"Задача ID: {task_id} удалена из планировщика. Удалено из очереди: {removed_count}, отменено выполнений: {cancelled_executions}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Ошибка удаления задачи {task_id} из планировщика: {e}")
+            raise
+
     async def delete_scheduled_task(self, task_id: int) -> bool:
         """Удалить запланированную задачу."""
         try:
@@ -177,18 +237,21 @@ class SchedulerService:
     def get_scheduled_task(self, task_id: int) -> Optional[ScheduledTaskResponse]:
         """Получить запланированную задачу по ID."""
         try:
-            query = "SELECT * FROM scheduled_tasks WHERE id = %s"
-            result = self.db_service.fetch_one(query, task_id)
+            from src.models.base import get_db
+            from src.models.tasks import ScheduledTask
 
-            if result:
-                task_dict = dict(result)
-                task_params = task_dict.get("task_params", "{}")
-                if isinstance(task_params, str):
-                    task_dict["task_params"] = json.loads(task_params)
-                elif task_params is None:
-                    task_dict["task_params"] = {}
-                return ScheduledTaskResponse(**task_dict)
-            return None
+            db = next(get_db())
+            try:
+                task = (
+                    db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+                )
+
+                if task:
+                    task_dict = _prepare_task_dict(task.to_dict())
+                    return ScheduledTaskResponse(**task_dict)
+                return None
+            finally:
+                db.close()
 
         except Exception as e:
             logger.error(f"Ошибка получения задачи {task_id}: {e}")
@@ -199,24 +262,26 @@ class SchedulerService:
     ) -> List[ScheduledTaskResponse]:
         """Получить список запланированных задач."""
         try:
-            if is_active is not None:
-                query = "SELECT * FROM scheduled_tasks WHERE is_active = %s ORDER BY created_at DESC"
-                results = self.db_service.fetch_all(query, is_active)
-            else:
-                query = "SELECT * FROM scheduled_tasks ORDER BY created_at DESC"
-                results = self.db_service.fetch_all(query)
+            from src.models.base import get_db
+            from src.models.tasks import ScheduledTask
 
-            tasks = []
-            for result in results:
-                task_dict = dict(result)
-                task_params = task_dict.get("task_params", "{}")
-                if isinstance(task_params, str):
-                    task_dict["task_params"] = json.loads(task_params)
-                elif task_params is None:
-                    task_dict["task_params"] = {}
-                tasks.append(ScheduledTaskResponse(**task_dict))
+            db = next(get_db())
+            try:
+                query = db.query(ScheduledTask).order_by(
+                    ScheduledTask.created_at.desc()
+                )
 
-            return tasks
+                if is_active is not None:
+                    query = query.filter(ScheduledTask.is_active == is_active)
+
+                tasks = []
+                for task in query.all():
+                    task_dict = _prepare_task_dict(task.to_dict())
+                    tasks.append(ScheduledTaskResponse(**task_dict))
+
+                return tasks
+            finally:
+                db.close()
 
         except Exception as e:
             logger.error(f"Ошибка получения списка задач: {e}")
@@ -225,27 +290,29 @@ class SchedulerService:
     def get_due_tasks(self) -> List[ScheduledTaskResponse]:
         """Получить задачи, готовые к выполнению."""
         try:
+            from src.models.base import get_db
+            from src.models.tasks import ScheduledTask
+
             now = datetime.now()
-            query = """
-                SELECT * FROM scheduled_tasks 
-                WHERE is_active = true 
-                AND next_run_at <= %s
-                ORDER BY next_run_at ASC
-            """
+            db = next(get_db())
+            try:
+                tasks_query = (
+                    db.query(ScheduledTask)
+                    .filter(
+                        ScheduledTask.is_active == True,
+                        ScheduledTask.next_run_at <= now,
+                    )
+                    .order_by(ScheduledTask.next_run_at.asc())
+                )
 
-            results = self.db_service.fetch_all(query, now)
-            tasks = []
+                tasks = []
+                for task in tasks_query.all():
+                    task_dict = _prepare_task_dict(task.to_dict())
+                    tasks.append(ScheduledTaskResponse(**task_dict))
 
-            for result in results:
-                task_dict = dict(result)
-                task_params = task_dict.get("task_params", "{}")
-                if isinstance(task_params, str):
-                    task_dict["task_params"] = json.loads(task_params)
-                elif task_params is None:
-                    task_dict["task_params"] = {}
-                tasks.append(ScheduledTaskResponse(**task_dict))
-
-            return tasks
+                return tasks
+            finally:
+                db.close()
 
         except Exception as e:
             logger.error(f"Ошибка получения готовых задач: {e}")
@@ -296,6 +363,56 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Ошибка планирования выполнения задачи {task.id}: {e}")
+            raise
+
+    async def execute_task_manually(self, task_id: int) -> dict:
+        """Запустить задачу вручную."""
+        try:
+            task = self.get_scheduled_task(task_id)
+            if not task:
+                raise ValueError(f"Задача {task_id} не найдена")
+
+            if not task.is_active:
+                raise ValueError(f"Задача {task_id} неактивна")
+
+            execution_data = TaskExecutionCreate(
+                task_type=task.task_type,
+                connection_id=task.connection_id,
+                scheduled_task_id=task.id,
+                parameters=task.task_params.model_dump() if task.task_params else {},
+            )
+
+            execution_id = self.db_service.create_task_execution(
+                task_type=execution_data.task_type.value,
+                connection_id=execution_data.connection_id,
+                scheduled_task_id=execution_data.scheduled_task_id,
+                parameters=execution_data.parameters,
+            )
+
+            queue_item = TaskQueueItem(
+                execution_id=execution_id,
+                task_type=task.task_type,
+                connection_id=task.connection_id,
+                scheduled_task_id=task.id,
+                parameters=task.task_params.model_dump() if task.task_params else {},
+                priority=10,
+            )
+
+            await self.redis_client.lpush("task_queue", queue_item.model_dump_json())
+
+            logger.info(
+                f"Ручной запуск задачи {task.name} (execution_id: {execution_id})"
+            )
+
+            return {
+                "id": execution_id,
+                "task_id": task_id,
+                "task_name": task.name,
+                "status": "queued",
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка ручного запуска задачи {task_id}: {e}")
             raise
 
     async def queue_task(self, task_id: int):
@@ -352,7 +469,7 @@ class SchedulerService:
 
         while self.is_running:
             try:
-                due_tasks = await self.get_due_tasks()
+                due_tasks = self.get_due_tasks()
 
                 for task in due_tasks:
                     try:
@@ -376,10 +493,9 @@ class SchedulerService:
         """Запустить планировщик (API метод)."""
         if not self.is_running:
             self.is_running = True
-            # Запускаем цикл планировщика в фоне
             task = asyncio.create_task(self.start_scheduler_loop())
-            # Сохраняем ссылку на задачу для предотвращения сборки мусора
             self._scheduler_task = task
+            await asyncio.sleep(0.1)
             logger.info("Планировщик запущен через API")
         else:
             logger.info("Планировщик уже запущен")
@@ -392,50 +508,45 @@ class SchedulerService:
                 self._scheduler_task.cancel()
                 await self._scheduler_task
             except asyncio.CancelledError:
-                # Задача была отменена, это ожидаемое поведение
-                pass
+                logger.debug("Scheduler task cancelled")
+                raise
         logger.info("Планировщик остановлен через API")
 
     async def get_status(self):
         """Получить статус планировщика."""
         try:
-            # Используем прямое подключение для статистики
             from src.models.base import get_db
-            from sqlalchemy import text
+            from src.models.tasks import ScheduledTask, TaskExecution
+            from sqlalchemy import func
+            from datetime import datetime, timedelta
 
-            # Статистика задач
             db = next(get_db())
             try:
-                total_tasks = db.execute(
-                    text("SELECT COUNT(*) FROM scheduled_tasks")
-                ).scalar()
-                active_tasks = db.execute(
-                    text("SELECT COUNT(*) FROM scheduled_tasks WHERE is_active = true")
-                ).scalar()
+                total_tasks = db.query(ScheduledTask).count()
+                active_tasks = (
+                    db.query(ScheduledTask)
+                    .filter(ScheduledTask.is_active == True)
+                    .count()
+                )
 
-                # Последние выполнения
-                recent_executions = db.execute(
-                    text(
-                        """
-                    SELECT COUNT(*) FROM task_executions 
-                    WHERE started_at >= NOW() - INTERVAL '24 hours'
-                """
-                    )
-                ).scalar()
+                last_24h = datetime.now() - timedelta(hours=24)
+                recent_executions = (
+                    db.query(TaskExecution)
+                    .filter(TaskExecution.started_at >= last_24h)
+                    .count()
+                )
 
-                # Неудачные выполнения за последние 24 часа
-                failed_executions = db.execute(
-                    text(
-                        """
-                    SELECT COUNT(*) FROM task_executions 
-                    WHERE status = 'failed' AND started_at >= NOW() - INTERVAL '24 hours'
-                """
+                failed_executions = (
+                    db.query(TaskExecution)
+                    .filter(
+                        TaskExecution.status == "failed",
+                        TaskExecution.started_at >= last_24h,
                     )
-                ).scalar()
+                    .count()
+                )
             finally:
                 db.close()
 
-            # Статус Redis
             redis_status = "connected" if self.redis_client else "disconnected"
             if self.redis_client:
                 try:
@@ -467,23 +578,24 @@ class SchedulerService:
         """Получить детальную статистику планировщика."""
         try:
             from src.models.base import get_db
-            from sqlalchemy import text
+            from src.models.tasks import ScheduledTask, TaskExecution
+            from sqlalchemy import func, case, extract, text
+            from datetime import datetime, timedelta
 
             db = next(get_db())
             try:
-                # Статистика по типам задач
-                task_types_stats = db.execute(
-                    text(
-                        """
-                    SELECT task_type, COUNT(*) as count, 
-                           SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
-                    FROM scheduled_tasks 
-                    GROUP BY task_type
-                """
+                task_types_stats = (
+                    db.query(
+                        ScheduledTask.task_type,
+                        func.count(ScheduledTask.id).label("count"),
+                        func.sum(
+                            case((ScheduledTask.is_active == True, 1), else_=0)
+                        ).label("active_count"),
                     )
-                ).fetchall()
+                    .group_by(ScheduledTask.task_type)
+                    .all()
+                )
 
-                # Статистика выполнений по дням (последние 7 дней)
                 daily_stats = db.execute(
                     text(
                         """
@@ -500,7 +612,6 @@ class SchedulerService:
                     )
                 ).fetchall()
 
-                # Топ наиболее часто выполняемых задач
                 top_tasks = db.execute(
                     text(
                         """
@@ -520,7 +631,11 @@ class SchedulerService:
 
             return {
                 "task_types": [
-                    {"task_type": row[0], "total_count": row[1], "active_count": row[2]}
+                    {
+                        "task_type": row.task_type,
+                        "total_count": row.count,
+                        "active_count": row.active_count or 0,
+                    }
                     for row in task_types_stats
                 ],
                 "daily_stats": [
@@ -555,10 +670,8 @@ class SchedulerService:
             pending_tasks = []
 
             if self.redis_client:
-                # Получаем длину очереди
                 queue_length = await self.redis_client.llen("task_queue")
 
-                # Получаем несколько первых задач из очереди (без удаления)
                 raw_tasks = await self.redis_client.lrange("task_queue", 0, 9)
 
                 for raw_task in raw_tasks:
@@ -576,23 +689,28 @@ class SchedulerService:
                     except json.JSONDecodeError:
                         continue
 
-            # Текущие выполняющиеся задачи
             from src.models.base import get_db
-            from sqlalchemy import text
+            from src.models.tasks import ScheduledTask, TaskExecution
 
             db = next(get_db())
             try:
-                running_tasks = db.execute(
-                    text(
-                        """
-                    SELECT te.id, st.name, st.task_type, te.started_at, te.status
-                    FROM task_executions te
-                    JOIN scheduled_tasks st ON te.scheduled_task_id = st.id
-                    WHERE te.status = 'running'
-                    ORDER BY te.started_at
-                """
+                running_tasks_query = (
+                    db.query(
+                        TaskExecution.id,
+                        ScheduledTask.name,
+                        ScheduledTask.task_type,
+                        TaskExecution.started_at,
+                        TaskExecution.status,
                     )
-                ).fetchall()
+                    .join(
+                        ScheduledTask,
+                        TaskExecution.scheduled_task_id == ScheduledTask.id,
+                    )
+                    .filter(TaskExecution.status == "running")
+                    .order_by(TaskExecution.started_at)
+                )
+
+                running_tasks = running_tasks_query.all()
             finally:
                 db.close()
 
@@ -601,11 +719,13 @@ class SchedulerService:
                 "pending_tasks": pending_tasks,
                 "running_tasks": [
                     {
-                        "execution_id": row[0],
-                        "task_name": row[1],
-                        "task_type": row[2],
-                        "started_at": row[3].isoformat() if row[3] else None,
-                        "status": row[4],
+                        "execution_id": row.id,
+                        "task_name": row.name,
+                        "task_type": row.task_type,
+                        "started_at": (
+                            row.started_at.isoformat() if row.started_at else None
+                        ),
+                        "status": row.status,
                     }
                     for row in running_tasks
                 ],

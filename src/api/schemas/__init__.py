@@ -2,8 +2,10 @@
 Схемы Pydantic для запросов и ответов сервера.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, validator
+from src.core.constants import VALID_ENVIRONMENTS
+from src.core.utils.environment_mappings import normalize_environment
 from datetime import datetime
 from enum import Enum
 import croniter
@@ -63,9 +65,12 @@ class ReviewRequest(BaseModel):
     @validator("environment")
     def validate_environment(cls, v):
         if v is not None:
-            valid_environments = ["dev", "test", "stage", "prod"]
-            if v not in valid_environments:
-                raise ValueError(f"Environment must be one of: {valid_environments}")
+            normalized = normalize_environment(v)
+            if normalized not in VALID_ENVIRONMENTS:
+                raise ValueError(
+                    f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+                )
+            return normalized
         return v
 
 
@@ -85,10 +90,12 @@ class BatchReviewRequest(BaseModel):
 
     @validator("environment")
     def validate_environment(cls, v):
-        valid_environments = ["dev", "test", "stage", "prod"]
-        if v not in valid_environments:
-            raise ValueError(f"Environment must be one of: {valid_environments}")
-        return v
+        normalized = normalize_environment(v)
+        if normalized not in VALID_ENVIRONMENTS:
+            raise ValueError(
+                f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+            )
+        return normalized
 
 
 class BatchReviewResponse(BaseModel):
@@ -175,6 +182,15 @@ class ConnectionBase(BaseModel):
     environment: str = "development"
     description: Optional[str] = None
     tags: List[str] = []
+
+    @validator("environment")
+    def validate_environment(cls, v):
+        normalized = normalize_environment(v)
+        if normalized not in VALID_ENVIRONMENTS:
+            raise ValueError(
+                f"Environment must be one of: {VALID_ENVIRONMENTS} or their short forms: dev, stage, prod"
+            )
+        return normalized
 
 
 class ConnectionCreate(ConnectionBase):

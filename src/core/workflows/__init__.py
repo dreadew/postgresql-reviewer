@@ -101,11 +101,9 @@ class SQLReviewWorkflow:
                 f"Parsed result type: {type(parsed_result)}, result: {parsed_result}"
             )
 
-            # Убедимся, что результат - словарь
             if isinstance(parsed_result, dict):
                 state["result"] = parsed_result
             else:
-                # Если не словарь, создаем словарь с результатом
                 state["result"] = {
                     "errors": [],
                     "overall_score": 80,
@@ -114,7 +112,6 @@ class SQLReviewWorkflow:
                 }
         except (json.JSONDecodeError, TypeError) as e:
             logger.error(f"Error parsing JSON response: {e}")
-            # Возвращаем базовую структуру при ошибке парсинга
             state["result"] = {
                 "errors": [
                     {"content": "Failed to parse analysis result", "criticality": "low"}
@@ -186,7 +183,7 @@ class SQLReviewWorkflow:
     ) -> Dict[str, Any]:
         config = {
             "configurable": {"thread_id": thread_id or "default"},
-            # "callbacks": [CallbackHandler()],
+            "callbacks": [CallbackHandler()],
         }
         final_state = self.graph.invoke(initial_state, config=config)
         return final_state["result"]
@@ -244,11 +241,9 @@ class ConfigAnalysisWorkflow:
             json_response = safe_extract_json(state["response"])
             parsed_result = json.loads(json_response)
 
-            # Убедимся, что результат - словарь
             if isinstance(parsed_result, dict):
                 state["result"] = parsed_result
             else:
-                # Если не словарь, создаем словарь с результатом
                 state["result"] = {
                     "errors": [],
                     "overall_score": 80,
@@ -257,7 +252,6 @@ class ConfigAnalysisWorkflow:
                 }
         except (json.JSONDecodeError, TypeError) as e:
             logger.error(f"Error parsing config JSON response: {e}")
-            # Возвращаем базовую структуру при ошибке парсинга
             state["result"] = {
                 "errors": [
                     {
@@ -302,14 +296,14 @@ class ConfigAnalysisWorkflow:
     ) -> Dict[str, Any]:
         config = {
             "configurable": {"thread_id": thread_id or "config_analysis"},
-            # "callbacks": [CallbackHandler()],
+            "callbacks": [CallbackHandler()],
         }
         final_state = self.graph.invoke(initial_state, config=config)
         return final_state["result"]
 
 
 class LogsAnalysisWorkflow:
-    """Workflow для анализа конфигурации."""
+    """Workflow для анализа логов."""
 
     def __init__(self, llm_service, store):
         self.llm_service = llm_service
@@ -378,11 +372,9 @@ class LogsAnalysisWorkflow:
             json_response = safe_extract_json(state["response"])
             parsed_result = json.loads(json_response)
 
-            # Убедимся, что результат - словарь
             if isinstance(parsed_result, dict):
                 state["result"] = parsed_result
             else:
-                # Если не словарь, создаем словарь с результатом
                 state["result"] = {
                     "errors": [],
                     "overall_score": 80,
@@ -391,7 +383,6 @@ class LogsAnalysisWorkflow:
                 }
         except (json.JSONDecodeError, TypeError) as e:
             logger.error(f"Error parsing logs JSON response: {e}")
-            # Возвращаем базовую структуру при ошибке парсинга
             state["result"] = {
                 "errors": [
                     {
@@ -410,8 +401,7 @@ class LogsAnalysisWorkflow:
     ) -> List[Dict[str, Any]]:
         if not self.store:
             return []
-        # Для логов используем сами логи как поисковый запрос
-        search_query = logs[:500]  # Ограничиваем длину для поиска
+        search_query = logs[:500]
         return self.store.similarity_search(search_query, k=top_k)
 
     def execute(
@@ -419,7 +409,7 @@ class LogsAnalysisWorkflow:
     ) -> Dict[str, Any]:
         config = {
             "configurable": {"thread_id": thread_id or "logs_analysis"},
-            # "callbacks": [CallbackHandler()],
+            "callbacks": [CallbackHandler()],
         }
         final_state = self.graph.invoke(initial_state, config=config)
         return final_state["result"]

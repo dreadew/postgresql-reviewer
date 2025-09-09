@@ -2,6 +2,19 @@
 Константы приложения
 """
 
+VALID_ENVIRONMENTS = ["development", "test", "staging", "production"]
+
+ENVIRONMENT_MAPPING = {
+    "dev": "development",
+    "stage": "staging",
+    "prod": "production",
+    "test": "test",
+    "development": "development",
+    "staging": "staging",
+    "production": "production",
+}
+
+
 CRITICALITY_MULTIPLIERS = {
     "development": 1.0,
     "test": 1.25,

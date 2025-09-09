@@ -395,21 +395,21 @@ class DatabaseService:
 
             self.execute_query_async(query, *values)
 
-    async def create_task_execution(
+    def create_task_execution(
         self,
         task_type: str,
         connection_id: int,
         scheduled_task_id: int = None,
         parameters: Dict[str, Any] = None,
     ) -> int:
-        """Создать новое выполнение задачи (асинхронная версия)."""
+        """Создать новое выполнение задачи."""
         query = """
             INSERT INTO task_executions (scheduled_task_id, task_type, connection_id, status, parameters, started_at)
             VALUES (%s, %s, %s, 'pending', %s, %s)
             RETURNING id
         """
 
-        result = await self.execute_query_async(
+        result = self.fetch_one(
             query,
             scheduled_task_id,
             task_type,
@@ -419,7 +419,7 @@ class DatabaseService:
         )
 
         if result:
-            return result[0]["id"]
+            return result["id"]
         raise ValueError("Не удалось создать выполнение задачи")
 
 
