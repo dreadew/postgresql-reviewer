@@ -320,7 +320,12 @@ class TaskWorker:
                 config_query = """
                     SELECT name, setting, unit, category, short_desc 
                     FROM pg_settings 
-                    WHERE category IN ('Resource Usage / Memory', 'Resource Usage / Disk', 'Write Ahead Log', 'Query Planning')
+                    WHERE category IN (
+                        'Resource Usage / Memory', 'Resource Usage / Disk', 'Write Ahead Log', 'Query Planning',
+                        'Использование ресурсов / Память', 'Использование ресурсов / Диск', 
+                        'Журнал WAL / Параметры', 'Настройка запросов / Константы стоимости для планировщика',
+                        'Настройка запросов / Другие параметры планировщика', 'Настройка запросов / Конфигурация методов планировщика'
+                    )
                     ORDER BY category, name
                 """
 
@@ -336,12 +341,29 @@ class TaskWorker:
                         "description": row["short_desc"],
                     }
 
+                if len(config) == 0:
+                    cursor.execute("SELECT count(*) as total FROM pg_settings")
+                    total_settings = cursor.fetchone()
+                    logger.info(
+                        f"Всего настроек в pg_settings: {total_settings['total']}"
+                    )
+
+                    cursor.execute(
+                        "SELECT DISTINCT category FROM pg_settings ORDER BY category"
+                    )
+                    categories = cursor.fetchall()
+                    logger.info(
+                        f"Доступные категории: {[cat['category'] for cat in categories]}"
+                    )
+
                 api_url = f"{settings.scheduler_api_url}/api/v1/config/analyze"
 
                 postgresql_version = self._get_postgresql_version(connection_data)
 
+                config_for_api = {k: v["value"] for k, v in config.items()}
+
                 payload = {
-                    "config": {k: v["value"] for k, v in config.items()},
+                    "config": config_for_api,
                     "server_info": {
                         "version": postgresql_version,
                         "host": connection_data["host"],
