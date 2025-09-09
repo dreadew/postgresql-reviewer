@@ -58,18 +58,18 @@ async def get_rules(category: Optional[str] = None):
         search_dirs = []
         if category:
             logger.info(f"Category specified: {category}")
-            if category in ["config", "sql"]:
+            if category in ["config", "sql", "logs"]:
                 search_dirs.append(RULES_DIR / category)
                 logger.info(f"Added search dir: {RULES_DIR / category}")
             else:
                 logger.error(f"Invalid category: {category}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Category must be 'config' or 'sql'",
+                    detail="Category must be 'config', 'sql' or 'logs',",
                 )
         else:
             logger.info("No category specified, searching all")
-            search_dirs = [RULES_DIR / "config", RULES_DIR / "sql"]
+            search_dirs = [RULES_DIR / "config", RULES_DIR / "sql", RULES_DIR / "logs"]
             logger.info(f"Search dirs: {search_dirs}")
 
         for search_dir in search_dirs:
@@ -119,10 +119,10 @@ async def get_rules(category: Optional[str] = None):
 async def get_rule(category: str, filename: str):
     """Получить правило по категории и имени файла."""
     try:
-        if category not in ["config", "sql"]:
+        if category not in ["config", "sql", "logs"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Category must be 'config' or 'sql'",
+                detail="Category must be 'config', 'sql' or 'logs',",
             )
 
         file_path = RULES_DIR / category / filename
@@ -155,10 +155,10 @@ async def get_rule(category: str, filename: str):
 async def create_rule(rule: RuleCreate):
     """Создать новое правило."""
     try:
-        if rule.category not in ["config", "sql"]:
+        if rule.category not in ["config", "sql", "logs"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Category must be 'config' or 'sql'",
+                detail="Category must be 'config', 'sql' or 'logs',",
             )
 
         category_dir = RULES_DIR / rule.category
@@ -193,10 +193,10 @@ async def create_rule(rule: RuleCreate):
 async def update_rule(category: str, filename: str, rule_update: RuleUpdate):
     """Обновить правило."""
     try:
-        if category not in ["config", "sql"]:
+        if category not in ["config", "sql", "logs"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Category must be 'config' or 'sql'",
+                detail="Category must be 'config', 'sql' or 'logs',",
             )
 
         file_path = RULES_DIR / category / filename
@@ -242,10 +242,10 @@ async def update_rule(category: str, filename: str, rule_update: RuleUpdate):
 async def delete_rule(category: str, filename: str):
     """Удалить правило."""
     try:
-        if category not in ["config", "sql"]:
+        if category not in ["config", "sql", "logs"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Category must be 'config' or 'sql'",
+                detail="Category must be 'config', 'sql' or 'logs',",
             )
 
         file_path = RULES_DIR / category / filename
